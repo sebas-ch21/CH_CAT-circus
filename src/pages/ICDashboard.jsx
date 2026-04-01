@@ -1,16 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { TopNav } from '../components/TopNav';
+import { CircleAlert as AlertCircle, CircleCheck as CheckCircle2, User, Loader, Info, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, LogOut, CircleAlert as AlertCircle, Clock, CircleCheck as CheckCircle2, User, Loader } from 'lucide-react';
 
 export function ICDashboard() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const [assignment, setAssignment] = useState(null);
   const [inQueue, setInQueue] = useState(false);
-  const [queuedAt, setQueuedAt] = useState(null);
-  const [elapsedTime, setElapsedTime] = useState(0);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -19,16 +16,6 @@ export function ICDashboard() {
     const interval = setInterval(checkStatus, 2000);
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    if (!inQueue) return;
-
-    const timer = setInterval(() => {
-      setElapsedTime(Math.floor((Date.now() - queuedAt) / 1000));
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [inQueue, queuedAt]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -64,13 +51,7 @@ export function ICDashboard() {
         .eq('ic_id', user.id)
         .maybeSingle();
 
-      if (queueData) {
-        setInQueue(true);
-        setQueuedAt(new Date(queueData.entered_at).getTime());
-      } else {
-        setInQueue(false);
-        setQueuedAt(null);
-      }
+      setInQueue(!!queueData);
 
       const { data: profileData } = await supabase
         .from('profiles')
@@ -78,7 +59,7 @@ export function ICDashboard() {
         .eq('id', user.id)
         .maybeSingle();
 
-      if (profileData?.current_status === 'BUSY' && !inQueue) {
+      if (profileData?.current_status === 'BUSY' && !queueData) {
         const { data: slotData } = await supabase
           .from('bps_slots')
           .select('*')
@@ -111,7 +92,6 @@ export function ICDashboard() {
         .eq('id', user.id);
 
       setInQueue(true);
-      setQueuedAt(Date.now());
     } catch (error) {
       console.error('Error entering queue:', error);
     } finally {
@@ -133,8 +113,6 @@ export function ICDashboard() {
         .eq('id', user.id);
 
       setInQueue(false);
-      setQueuedAt(null);
-      setElapsedTime(0);
     } catch (error) {
       console.error('Error confirming receipt:', error);
     } finally {
@@ -142,53 +120,30 @@ export function ICDashboard() {
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-  };
-
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   if (inQueue) {
     return (
       <div className="min-h-screen bg-white flex flex-col">
-        <nav className="border-b border-gray-200 bg-white sticky top-0 z-10">
-          <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-6 h-6 text-charlie-teal" strokeWidth={2} />
-              <span className="font-semibold text-gray-900">Charlie</span>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
-          </div>
-        </nav>
+        <TopNav />
 
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="w-full max-w-sm space-y-8">
-            <div className="text-center">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-charlie-mint-light rounded-full mb-6 animate-pulse">
-                <Clock className="w-10 h-10 text-charlie-teal" />
+            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-5 flex gap-3">
+              <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-blue-900 mb-1">IC Mode - In Queue</h3>
+                <p className="text-sm text-blue-800">You are waiting for a manager to assign you to an available BPS slot. Stay on this page for updates.</p>
               </div>
-              <h1 className="text-2xl font-semibold text-gray-900 mb-3">
-                Waiting for Reassignment
-              </h1>
-              <p className="text-gray-600">
-                A manager will assign you to a new patient shortly
-              </p>
             </div>
 
-            <div className="bg-gray-50 rounded-2xl p-8 text-center border border-gray-200">
-              <p className="text-sm text-gray-600 mb-3 font-medium">Time in Queue</p>
-              <p className="text-6xl font-bold text-charlie-teal font-mono">
-                {formatTime(elapsedTime)}
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 bg-gray-100 rounded-full mb-6">
+                <Clock className="w-10 h-10 text-gray-600 animate-pulse" />
+              </div>
+              <h1 className="text-2xl font-semibold text-gray-900 mb-3">
+                In reassignment queue
+              </h1>
+              <p className="text-gray-600">
+                Waiting for manager dispatch...
               </p>
             </div>
 
@@ -228,7 +183,7 @@ export function ICDashboard() {
                   ) : (
                     <>
                       <CheckCircle2 className="w-6 h-6" />
-                      Confirm & Resume
+                      Confirm Receipt
                     </>
                   )}
                 </button>
@@ -243,26 +198,21 @@ export function ICDashboard() {
   if (assignment) {
     return (
       <div className="min-h-screen bg-white flex flex-col">
-        <nav className="border-b border-gray-200 bg-white sticky top-0 z-10">
-          <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-6 h-6 text-charlie-teal" strokeWidth={2} />
-              <span className="font-semibold text-gray-900">Charlie</span>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
-          </div>
-        </nav>
+        <TopNav />
 
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="w-full max-w-sm space-y-6">
+            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-5 flex gap-3">
+              <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-blue-900 mb-1">IC Mode - Current Assignment</h3>
+                <p className="text-sm text-blue-800">You have an active patient assignment. Click the button below if the patient doesn't show up.</p>
+              </div>
+            </div>
+
             <div className="text-center">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-charlie-mint-light rounded-full mb-4">
-                <User className="w-8 h-8 text-charlie-teal" />
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
+                <User className="w-8 h-8 text-gray-700" />
               </div>
               <h1 className="text-2xl font-semibold text-gray-900 mb-2">
                 Current Assignment
@@ -270,8 +220,8 @@ export function ICDashboard() {
             </div>
 
             <div className="space-y-4">
-              <div className="bg-charlie-mint-light border-2 border-charlie-mint rounded-2xl p-6">
-                <p className="text-sm text-charlie-teal font-medium mb-2">Patient ID</p>
+              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                <p className="text-sm text-gray-600 font-medium mb-2">Patient ID</p>
                 <p className="text-3xl font-bold text-gray-900">
                   {assignment.patient_identifier}
                 </p>
@@ -290,17 +240,17 @@ export function ICDashboard() {
             <button
               onClick={handleNoShow}
               disabled={loading}
-              className="w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-lg"
+              className="w-full bg-charlie-purple hover:bg-charlie-purple-dark disabled:bg-gray-400 text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-lg"
             >
               {loading ? (
                 <>
                   <Loader className="w-6 h-6 animate-spin" />
-                  Entering Queue...
+                  <span className="text-white">Entering Queue...</span>
                 </>
               ) : (
                 <>
-                  <AlertCircle className="w-7 h-7" />
-                  <span>Patient No-Show:<br/>Enter Reassignment Queue</span>
+                  <AlertCircle className="w-7 h-7 text-white" />
+                  <span className="text-white leading-tight">Patient No-Show:<br/>Enter Reassignment Queue</span>
                 </>
               )}
             </button>
@@ -312,23 +262,18 @@ export function ICDashboard() {
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      <nav className="border-b border-gray-200 bg-white sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-6 h-6 text-charlie-teal" strokeWidth={2} />
-            <span className="font-semibold text-gray-900">Charlie</span>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
-        </div>
-      </nav>
+      <TopNav />
 
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm space-y-6">
+          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-5 flex gap-3">
+            <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-blue-900 mb-1">IC Mode Instructions</h3>
+              <p className="text-sm text-blue-800">Click the button below to enter the reassignment queue when your patient doesn't show up for their appointment.</p>
+            </div>
+          </div>
+
           <div className="text-center bg-green-50 border border-green-200 rounded-2xl p-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
               <CheckCircle2 className="w-8 h-8 text-green-600" />
@@ -344,17 +289,17 @@ export function ICDashboard() {
           <button
             onClick={handleNoShow}
             disabled={loading}
-            className="w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-bold py-8 px-6 rounded-2xl text-lg transition-all flex flex-col items-center justify-center gap-4 shadow-lg min-h-[160px]"
+            className="w-full bg-charlie-purple hover:bg-charlie-purple-dark disabled:bg-gray-400 text-white font-bold py-8 px-6 rounded-2xl text-lg transition-all flex flex-col items-center justify-center gap-4 shadow-lg min-h-[160px]"
           >
             {loading ? (
               <>
-                <Loader className="w-8 h-8 animate-spin" />
-                <span>Entering Queue...</span>
+                <Loader className="w-8 h-8 animate-spin text-white" />
+                <span className="text-white">Entering Queue...</span>
               </>
             ) : (
               <>
-                <AlertCircle className="w-12 h-12" />
-                <span className="leading-tight">Patient No-Show:<br/>Enter Reassignment Queue</span>
+                <AlertCircle className="w-12 h-12 text-white" />
+                <span className="text-white leading-tight">Patient No-Show:<br/>Enter Reassignment Queue</span>
               </>
             )}
           </button>

@@ -1,12 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, LogOut, Users, Calendar, ArrowRight, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Loader } from 'lucide-react';
+import { TopNav } from '../components/TopNav';
+import { Users, Calendar, ArrowRight, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Loader, Info } from 'lucide-react';
 
 export function ManagerCenter() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
   const [queue, setQueue] = useState([]);
   const [slots, setSlots] = useState([]);
   const [selectedIC, setSelectedIC] = useState(null);
@@ -145,11 +142,6 @@ export function ManagerCenter() {
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-  };
-
   const getTierColor = (tier) => {
     switch (tier) {
       case 1:
@@ -177,31 +169,15 @@ export function ManagerCenter() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="w-7 h-7 text-charlie-teal" strokeWidth={2} />
-              <h1 className="text-xl font-semibold text-gray-900">Charlie Admissions</h1>
-              <span className="ml-2 px-3 py-1 bg-charlie-mint-light text-charlie-teal text-xs font-medium rounded-full">
-                Manager
-              </span>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
-            >
-              <LogOut className="w-5 h-5" />
-              <span>Logout</span>
-            </button>
-          </div>
-        </div>
-      </nav>
+      <TopNav />
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-8">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-2">Command Center</h2>
-          <p className="text-gray-600">Real-time dispatch board for BPS overflow assignments</p>
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-5 flex gap-3">
+          <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-semibold text-blue-900 mb-1">Manager Mode Instructions</h3>
+            <p className="text-sm text-blue-800">Select IC from the queue and an open slot, then click "Confirm Dispatch" to assign. Queue is sorted by tier rank (1 is best) and then by wait time.</p>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
