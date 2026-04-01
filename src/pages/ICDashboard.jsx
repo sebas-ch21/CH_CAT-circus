@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
-import { CircleCheck as CheckCircle2, User, Loader, Info } from 'lucide-react';
+import { CircleCheck as CheckCircle2, Loader, Info, XCircle, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export function ICDashboard() {
@@ -13,22 +13,16 @@ export function ICDashboard() {
 
   useEffect(() => {
     checkStatus();
-    const interval = setInterval(checkStatus, 2000);
+    const interval = setInterval(checkStatus, 3000);
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     if (!user?.id) return;
-
     const channel = supabase
       .channel(`bps_slots_${user.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'bps_slots', filter: `assigned_ic_id=eq.${user.id}` },
-        () => checkStatus()
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bps_slots', filter: `assigned_ic_id=eq.${user.id}` }, () => checkStatus())
       .subscribe();
-
     return () => channel.unsubscribe();
   }, [user]);
 
@@ -42,7 +36,7 @@ export function ICDashboard() {
 
       if (profileData?.current_status === 'BUSY' && !queueData) {
         const { data: slotData } = await supabase.from('bps_slots').select('*').eq('assigned_ic_id', user.id).eq('status', 'ASSIGNED').maybeSingle();
-        if (slotData) setAssignment(slotData);
+        setAssignment(slotData);
       } else {
         setAssignment(null);
       }
@@ -51,14 +45,22 @@ export function ICDashboard() {
     }
   };
 
-  const handleNoShow = async () => {
+  const handleQueueToggle = async () => {
     setLoading(true);
     try {
-      await supabase.from('queue_entries').insert({ ic_id: user.id, entered_at: new Date().toISOString() });
-      await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', user.id);
-      setInQueue(true);
+      if (inQueue) {
+        // Exit the queue
+        await supabase.from('queue_entries').delete().eq('ic_id', user.id);
+        await supabase.from('profiles').update({ current_status: 'AVAILABLE' }).eq('id', user.id);
+        setInQueue(false);
+      } else {
+        // Enter the queue
+        await supabase.from('queue_entries').insert({ ic_id: user.id, entered_at: new Date().toISOString() });
+        await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', user.id);
+        setInQueue(true);
+      }
     } catch (error) {
-      console.error('Error entering queue:', error);
+      console.error('Error toggling queue:', error);
     } finally {
       setLoading(false);
     }
@@ -70,6 +72,8 @@ export function ICDashboard() {
       await supabase.from('queue_entries').delete().eq('ic_id', user.id);
       await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', user.id);
       setInQueue(false);
+      setAssignment(null);
+      checkStatus();
     } catch (error) {
       console.error('Error confirming receipt:', error);
     } finally {
@@ -84,14 +88,14 @@ export function ICDashboard() {
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="w-full max-w-sm space-y-8 text-center">
             
-            <div className="flex justify-center mb-6">
+            <div className="flex justify-center mb-4">
               <CheckCircle2 className="w-24 h-24 text-green-500" />
             </div>
             
             <h1 className="text-2xl font-semibold text-gray-900 mb-2">Successfully Entered Queue</h1>
             <p className="text-gray-600 mb-8">Waiting for manager dispatch. Do not close this page.</p>
 
-            {assignment && (
+            {assignment ? (
               <div className="space-y-4 text-left">
                 <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-6">
                   <p className="font-semibold text-green-900 mb-4">New Assignment Ready!</p>
@@ -117,6 +121,14 @@ export function ICDashboard() {
                   {confirming ? <><Loader className="w-6 h-6 animate-spin" />Confirming...</> : 'Confirm Receipt'}
                 </button>
               </div>
+            ) : (
+              <button
+                onClick={handleQueueToggle}
+                disabled={loading}
+                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 border-2 border-gray-200 font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-sm"
+              >
+                {loading ? <Loader className="w-6 h-6 animate-spin" /> : <><XCircle className="w-6 h-6" /> Exit Queue</>}
+              </button>
             )}
           </div>
         </div>
@@ -149,7 +161,7 @@ export function ICDashboard() {
             </div>
 
             <button
-              onClick={handleNoShow}
+              onClick={handleQueueToggle}
               disabled={loading}
               className="mt-8 w-full bg-[#A890D3] hover:bg-[#8B6FC4] text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all shadow-lg"
             >
@@ -175,7 +187,7 @@ export function ICDashboard() {
           </div>
 
           <button
-            onClick={handleNoShow}
+            onClick={handleQueueToggle}
             disabled={loading}
             className="w-full bg-[#A890D3] hover:bg-[#8B6FC4] text-white font-bold py-10 px-6 rounded-2xl text-xl transition-all shadow-lg min-h-[160px]"
           >
