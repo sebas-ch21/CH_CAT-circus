@@ -10,6 +10,7 @@ export function ICDashboard() {
   const [inQueue, setInQueue] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [exiting, setExiting] = useState(false);
 
   useEffect(() => {
     checkStatus();
@@ -120,6 +121,27 @@ export function ICDashboard() {
     }
   };
 
+  const handleExitQueue = async () => {
+    setExiting(true);
+    try {
+      await supabase
+        .from('queue_entries')
+        .delete()
+        .eq('ic_id', user.id);
+
+      await supabase
+        .from('profiles')
+        .update({ current_status: 'AVAILABLE' })
+        .eq('id', user.id);
+
+      setInQueue(false);
+    } catch (error) {
+      console.error('Error exiting queue:', error);
+    } finally {
+      setExiting(false);
+    }
+  };
+
   if (inQueue) {
     return (
       <div className="min-h-screen bg-white flex flex-col">
@@ -142,9 +164,24 @@ export function ICDashboard() {
               <h1 className="text-2xl font-semibold text-gray-900 mb-3">
                 In reassignment queue
               </h1>
-              <p className="text-gray-600">
+              <p className="text-gray-600 mb-6">
                 Waiting for manager dispatch...
               </p>
+
+              <button
+                onClick={handleExitQueue}
+                disabled={exiting}
+                className="w-full bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 text-gray-900 font-medium py-3 px-6 rounded-xl transition-all"
+              >
+                {exiting ? (
+                  <>
+                    <Loader className="w-5 h-5 animate-spin inline mr-2" />
+                    Exiting Queue...
+                  </>
+                ) : (
+                  'Exit Queue'
+                )}
+              </button>
             </div>
 
             {assignment && (
@@ -274,14 +311,14 @@ export function ICDashboard() {
             </div>
           </div>
 
-          <div className="text-center bg-green-50 border border-green-200 rounded-2xl p-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
-              <CheckCircle2 className="w-8 h-8 text-green-600" />
+          <div className="text-center bg-charlie-purple-dark rounded-2xl p-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-white/20 rounded-full mb-4">
+              <CheckCircle2 className="w-8 h-8 text-white" />
             </div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            <h2 className="text-xl font-semibold text-white mb-2">
               You're Available
             </h2>
-            <p className="text-gray-600">
+            <p className="text-white/90">
               Ready to accept new appointments
             </p>
           </div>
