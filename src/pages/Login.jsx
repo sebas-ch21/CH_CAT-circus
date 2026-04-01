@@ -18,7 +18,7 @@ export function Login() {
     // Hardcoded custom error message
     const customError = "User not in system, reach out to Clinical Admissions Leadership";
 
-    // If email format is bad, immediately show the error
+    // If email format is bad, immediately show the error and stop
     if (!isValidEmail) {
       setError(customError);
       return;
@@ -78,7 +78,8 @@ export function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#5E4791] hover:bg-[#4A3770] text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-70 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#5E4791', color: '#ffffff' }}
+              className="w-full font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-md hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <><Loader className="w-5 h-5 animate-spin" /> Signing In...</>
