@@ -4,14 +4,17 @@ import { CSVUploadZone } from '../components/CSVUploadZone';
 import { TopNav } from '../components/TopNav';
 import { 
   Users, Calendar, CircleAlert as AlertCircle, CircleCheck as CheckCircle, 
-  Loader, Info, Lock, Eye, EyeOff, Trash2, Edit, X, UserCog, Search, ArrowRight 
+  Loader, Info, Lock, Eye, EyeOff, Trash2, Search, ArrowRight, Settings
 } from 'lucide-react';
 
 export function AdminPanel() {
+  const [activeTab, setActiveTab] = useState('roster'); // roster, appointments, security
   const [profiles, setProfiles] = useState([]);
   const [slots, setSlots] = useState([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   const [staffMessage, setStaffMessage] = useState('');
+  const [slotsMessage, setSlotsMessage] = useState('');
   
   // Security PIN States
   const [currentAdminPin, setCurrentAdminPin] = useState('charlieadmin');
@@ -33,13 +36,13 @@ export function AdminPanel() {
   const [pendingDuplicates, setPendingDuplicates] = useState([]);
   const [resolvedUploadData, setResolvedUploadData] = useState([]);
 
-  // User Management States
-  const [showManageUsersModal, setShowManageUsersModal] = useState(false);
+  // Search/Filter State
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
   useEffect(() => {
     fetchProfiles();
+    fetchSlots();
     fetchPins();
   }, []);
 
@@ -47,9 +50,14 @@ export function AdminPanel() {
     try {
       const { data } = await supabase.from('profiles').select('*').order('email');
       setProfiles(data || []);
-    } catch (error) {
-      console.error('Error fetching profiles:', error);
-    }
+    } catch (error) { console.error('Error fetching profiles:', error); }
+  };
+
+  const fetchSlots = async () => {
+    try {
+      const { data } = await supabase.from('bps_slots').select('*').order('start_time', { ascending: false });
+      setSlots(data || []);
+    } catch (error) { console.error('Error fetching slots:', error); }
   };
 
   const fetchPins = async () => {
@@ -84,15 +92,14 @@ export function AdminPanel() {
       setCurrentPin(newPin);
       setNewPin('');
       setMessage({ type: 'success', text: `${role} PIN updated successfully!` });
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Database error.' });
-    } finally {
+    } catch (error) { setMessage({ type: 'error', text: 'Database error.' }); }
+    finally {
       setUpdating(false);
       setTimeout(() => setMessage(null), 4000);
     }
   };
 
-  // --- REFACTORED STAFF UPLOAD WITH DUPLICATE HANDLING ---
+  // --- STAFF UPLOAD LOGIC ---
   const handleStaffUpload = async (csvData) => {
     setLoadingStaff(true);
     setStaffMessage('');
@@ -104,16 +111,14 @@ export function AdminPanel() {
       current_status: 'AVAILABLE',
     }));
 
-    // Filter out invalid rows
     const cleanData = validatedData.filter(d => d.email && ['ADMIN', 'MANAGER', 'IC'].includes(d.role));
     
     if (cleanData.length === 0) {
-      setStaffMessage('No valid staff data found in CSV.');
+      setStaffMessage('No valid staff data found.');
       setLoadingStaff(false);
       return;
     }
 
-    // Check for duplicates against existing profiles
     const duplicates = [];
     const newEntries = [];
 
@@ -128,7 +133,7 @@ export function AdminPanel() {
 
     if (duplicates.length > 0) {
       setPendingDuplicates(duplicates);
-      setResolvedUploadData(newEntries); // Start with the clean new entries
+      setResolvedUploadData(newEntries);
       setShowDuplicateModal(true);
     } else {
       await commitStaffData(cleanData);
@@ -145,28 +150,48 @@ export function AdminPanel() {
       await fetchProfiles();
       setStaffMessage(`Successfully updated ${data.length} staff members`);
       setTimeout(() => setStaffMessage(''), 4000);
-    } catch (error) {
-      setStaffMessage(`Error: ${error.message}`);
-    } finally {
-      setLoadingStaff(false);
-    }
+    } catch (error) { setStaffMessage(`Error: ${error.message}`); }
+    finally { setLoadingStaff(false); }
   };
 
   const resolveDuplicateRow = (index, choice) => {
     const resolvedRow = choice === 'new' ? pendingDuplicates[index].new : pendingDuplicates[index].old;
     const updatedResolved = [...resolvedUploadData, resolvedRow];
     const updatedPending = pendingDuplicates.filter((_, i) => i !== index);
-    
     setResolvedUploadData(updatedResolved);
     setPendingDuplicates(updatedPending);
-
     if (updatedPending.length === 0) {
       setShowDuplicateModal(false);
       commitStaffData(updatedResolved);
     }
   };
 
-  // --- USER MANAGEMENT FUNCTIONS ---
+  // --- APPOINTMENT UPLOAD LOGIC ---
+  const handleSlotsUpload = async (data) => {
+    setLoadingSlots(true);
+    setSlotsMessage('');
+    try {
+      const validatedData = data.map((row) => ({
+        patient_identifier: row.patient_identifier?.trim() || row.patient_id?.trim(),
+        start_time: row.start_time?.trim(),
+      }));
+      const errors = validatedData.filter((d) => !d.patient_identifier || !d.start_time);
+      if (errors.length > 0) {
+        setSlotsMessage(`Error: ${errors.length} rows invalid`);
+        setLoadingSlots(false);
+        return;
+      }
+      for (const row of validatedData) {
+        await supabase.from('bps_slots').insert({ patient_identifier: row.patient_identifier, start_time: new Date(row.start_time).toISOString(), status: 'OPEN' });
+      }
+      await fetchSlots();
+      setSlotsMessage(`Successfully imported ${validatedData.length} BPS slots`);
+      setTimeout(() => setSlotsMessage(''), 4000);
+    } catch (error) { setSlotsMessage(`Error: ${error.message}`); }
+    finally { setLoadingSlots(false); }
+  };
+
+  // --- INLINE EDITING ---
   const handleUpdateProfile = async (id, updates) => {
     await supabase.from('profiles').update(updates).eq('id', id);
     fetchProfiles();
@@ -178,237 +203,21 @@ export function AdminPanel() {
     fetchProfiles();
   };
 
-  const filteredProfiles = profiles.filter(p => 
-    p.email.toLowerCase().includes(userSearchTerm.toLowerCase())
-  );
+  const filteredProfiles = profiles.filter(p => p.email.toLowerCase().includes(userSearchTerm.toLowerCase()));
+
+  // Tab Header Helper
+  const getTabClass = (id) => `flex items-center gap-2 px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === id ? 'border-[#5E4791] text-[#5E4791] bg-purple-50' : 'border-transparent text-gray-400 hover:text-gray-600'}`;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <TopNav />
-
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-8 flex justify-between items-center">
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 flex gap-3 flex-1 mr-4">
-            <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <h3 className="font-semibold text-blue-900 mb-1">Admin Mode Instructions</h3>
-              <p className="text-sm text-blue-800">Upload CSVs to update roster (email, role, tier_rank). Use the button on the right to manually manage the current roster.</p>
-            </div>
-          </div>
-          
-          <button 
-            onClick={() => setShowManageUsersModal(true)}
-            style={{ backgroundColor: '#0F172A', color: '#ffffff' }}
-            className="flex items-center gap-2 px-6 py-4 rounded-xl font-bold shadow-lg hover:opacity-90 transition-all whitespace-nowrap"
-          >
-            <UserCog className="w-5 h-5" />
-            Edit/Remove Users
-          </button>
+        
+        {/* TAB NAVIGATION */}
+        <div className="flex border-b border-gray-200 mb-8 bg-white rounded-t-xl overflow-hidden shadow-sm">
+          <button onClick={() => setActiveTab('roster')} className={getTabClass('roster')}><Users className="w-4 h-4" /> Roster Management</button>
+          <button onClick={() => setActiveTab('appointments')} className={getTabClass('appointments')}><Calendar className="w-4 h-4" /> Appointment Management</button>
+          <button onClick={() => setActiveTab('security')} className={getTabClass('security')}><Settings className="w-4 h-4" /> Passcode Management</button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-          {/* STAFF UPLOAD CARD */}
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-[#E0F5F6] rounded-lg">
-                <Users className="w-6 h-6 text-[#007C8C]" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900">Staff Roster Upload</h3>
-            </div>
-            <CSVUploadZone onUpload={handleStaffUpload} title="Drop Staff CSV" description="Headers: email, role, tier_rank" expectedColumns={['email', 'role', 'tier_rank']} />
-            {staffMessage && (
-              <div className={`mt-4 p-4 rounded-xl text-sm font-medium ${staffMessage.includes('Successfully') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                {staffMessage}
-              </div>
-            )}
-            {loadingStaff && <div className="mt-4 flex items-center gap-2 text-[#007C8C]"><Loader className="w-4 h-4 animate-spin" /> Processing...</div>}
-          </div>
-
-          {/* ADMIN & MANAGER PIN CARDS (Side-by-Side) */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-[#0F172A] mb-4">Admin Mode PIN</h3>
-              <div className="flex gap-4 items-end">
-                <div className="flex-1">
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">New PIN</label>
-                  <input 
-                    type={showNewAdminPin ? "text" : "password"} 
-                    value={newAdminPin} 
-                    onChange={(e) => setNewAdminPin(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-[#5E4791]" 
-                    placeholder="Min 4 chars"
-                  />
-                </div>
-                <button onClick={() => handleUpdatePin('ADMIN')} style={{backgroundColor:'#5E4791', color:'#fff'}} className="px-4 py-2 rounded-lg font-bold text-sm">Update</button>
-              </div>
-              {adminPinMessage && <p className="text-xs mt-2 text-green-600 font-medium">{adminPinMessage.text}</p>}
-            </div>
-
-            <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-[#0F172A] mb-4">Manager Mode PIN</h3>
-              <div className="flex gap-4 items-end">
-                <div className="flex-1">
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">New PIN</label>
-                  <input 
-                    type={showNewManagerPin ? "text" : "password"} 
-                    value={newManagerPin} 
-                    onChange={(e) => setNewManagerPin(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-[#5E4791]" 
-                    placeholder="Min 4 chars"
-                  />
-                </div>
-                <button onClick={() => handleUpdatePin('MANAGER')} style={{backgroundColor:'#5E4791', color:'#fff'}} className="px-4 py-2 rounded-lg font-bold text-sm">Update</button>
-              </div>
-              {managerPinMessage && <p className="text-xs mt-2 text-green-600 font-medium">{managerPinMessage.text}</p>}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* --- DUPLICATE RESOLVER MODAL --- */}
-      {showDuplicateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/80 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="bg-[#5E4791] p-6 text-white flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold">Resolve Data Conflicts</h2>
-                <p className="text-sm opacity-80">{pendingDuplicates.length} duplicates detected. Choose which data to keep.</p>
-              </div>
-            </div>
-            
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="text-left text-xs font-bold text-gray-400 uppercase tracking-wider border-b">
-                    <th className="pb-4 px-4">User Email</th>
-                    <th className="pb-4 px-4">Current Data (In App)</th>
-                    <th className="pb-4 text-center"><ArrowRight className="inline w-4 h-4" /></th>
-                    <th className="pb-4 px-4">Incoming Data (From CSV)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingDuplicates.map((dup, idx) => (
-                    <tr key={idx} className="border-b hover:bg-gray-50 transition-colors">
-                      <td className="py-6 px-4 font-bold text-gray-900">{dup.old.email}</td>
-                      <td className="py-6 px-4">
-                        <button 
-                          onClick={() => resolveDuplicateRow(idx, 'old')}
-                          className="w-full text-left p-3 rounded-xl border-2 border-gray-100 hover:border-[#007C8C] transition-all group"
-                        >
-                          <div className="text-xs text-gray-400 font-bold group-hover:text-[#007C8C]">KEEP EXISTING</div>
-                          <div className="font-semibold text-gray-700">{dup.old.role} — Tier {dup.old.tier_rank}</div>
-                        </button>
-                      </td>
-                      <td className="text-center text-gray-300 font-bold">VS</td>
-                      <td className="py-6 px-4">
-                        <button 
-                          onClick={() => resolveDuplicateRow(idx, 'new')}
-                          className="w-full text-left p-3 rounded-xl border-2 border-gray-100 hover:border-[#5E4791] transition-all group"
-                        >
-                          <div className="text-xs text-gray-400 font-bold group-hover:text-[#5E4791]">OVERWRITE WITH NEW</div>
-                          <div className="font-semibold text-gray-700">{dup.new.role} — Tier {dup.new.tier_rank}</div>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- USER MANAGEMENT MODAL --- */}
-      {showManageUsersModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/80 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300">
-            <div className="p-8 border-b flex justify-between items-center bg-gray-50">
-              <div>
-                <h2 className="text-2xl font-bold text-[#0F172A]">Staff Roster Management</h2>
-                <p className="text-gray-500">Modify roles, ranks, or remove users from the system.</p>
-              </div>
-              <button onClick={() => setShowManageUsersModal(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
-                <X className="w-8 h-8 text-gray-400" />
-              </button>
-            </div>
-
-            <div className="p-8 bg-white border-b">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input 
-                  type="text" 
-                  placeholder="Search by email..." 
-                  value={userSearchTerm}
-                  onChange={(e) => setUserSearchTerm(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 bg-gray-100 border-none rounded-2xl focus:ring-2 focus:ring-[#5E4791] outline-none text-lg"
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-8 space-y-4">
-              {filteredProfiles.length === 0 ? (
-                <div className="text-center py-20 text-gray-400 italic">No users found matching "{userSearchTerm}"</div>
-              ) : (
-                filteredProfiles.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between p-5 bg-gray-50 rounded-2xl border border-gray-100 hover:shadow-md transition-all">
-                    <div className="flex-1">
-                      <div className="text-lg font-bold text-[#0F172A]">{p.email}</div>
-                      <div className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">System User</div>
-                    </div>
-
-                    <div className="flex items-center gap-6">
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase">Role</label>
-                        <select 
-                          value={p.role} 
-                          onChange={(e) => handleUpdateProfile(p.id, { role: e.target.value })}
-                          className="bg-white border rounded-lg px-3 py-2 font-semibold text-gray-700 outline-none focus:ring-1 focus:ring-[#5E4791]"
-                        >
-                          <option value="ADMIN">ADMIN</option>
-                          <option value="MANAGER">MANAGER</option>
-                          <option value="IC">IC</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase">Tier</label>
-                        <select 
-                          value={p.tier_rank || 3} 
-                          onChange={(e) => handleUpdateProfile(p.id, { tier_rank: parseInt(e.target.value) })}
-                          className="bg-white border rounded-lg px-3 py-2 font-semibold text-gray-700 outline-none focus:ring-1 focus:ring-[#5E4791]"
-                        >
-                          <option value="1">Tier 1</option>
-                          <option value="2">Tier 2</option>
-                          <option value="3">Tier 3</option>
-                        </select>
-                      </div>
-
-                      {deleteConfirmId === p.id ? (
-                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4">
-                          <button 
-                            onClick={() => handleDeleteProfile(p.id)}
-                            className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-red-700"
-                          >
-                            Confirm Delete
-                          </button>
-                          <button onClick={() => setDeleteConfirmId(null)} className="text-gray-400 hover:text-gray-600 font-bold text-sm px-2">Cancel</button>
-                        </div>
-                      ) : (
-                        <button 
-                          onClick={() => setDeleteConfirmId(p.id)}
-                          className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                        >
-                          <Trash2 className="w-6 h-6" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+        {/* --- ROSTER MANAGEMENT
