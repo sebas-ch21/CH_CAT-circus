@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ShieldCheck, LogOut } from 'lucide-react';
+import { Shield, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export function TopNav() {
@@ -15,7 +15,6 @@ export function TopNav() {
   const canAccessAdmin = user?.role === 'ADMIN';
   const canAccessManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
 
-  // This applies the gray box to whichever page you are currently on
   const getNavClass = (path) => {
     const isActive = location.pathname === path;
     return `px-4 py-2 text-sm transition-all rounded-lg ${
@@ -31,8 +30,9 @@ export function TopNav() {
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
-              <ShieldCheck className="w-7 h-7 text-[#007C8C]" strokeWidth={2} />
-              <h1 className="text-xl font-semibold text-gray-900">Charlie Admissions</h1>
+              {/* Changed to Deep Navy to match brand */}
+              <Shield className="w-7 h-7 text-[#0F172A]" strokeWidth={2.5} />
+              <h1 className="text-xl font-semibold text-[#0F172A]">Charlie Admissions</h1>
             </div>
 
             <div className="flex items-center gap-2">
