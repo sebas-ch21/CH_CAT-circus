@@ -81,7 +81,8 @@ export function ProtectedRoute({ children, requiredRole }) {
             <button
               type="submit"
               disabled={!pinInput || verifying}
-              className="w-full bg-[#5E4791] hover:bg-[#4A3770] text-white font-bold py-3.5 rounded-xl transition-all shadow-md disabled:opacity-70 flex items-center justify-center"
+              style={{ backgroundColor: '#5E4791', color: '#ffffff' }}
+              className="w-full font-bold py-3.5 rounded-xl transition-all shadow-md hover:opacity-90 disabled:opacity-70 flex items-center justify-center disabled:cursor-not-allowed"
             >
               {verifying ? <Loader className="w-5 h-5 animate-spin" /> : 'Unlock Workspace'}
             </button>
