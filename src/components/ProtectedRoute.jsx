@@ -7,10 +7,7 @@ export function ProtectedRoute({ children, requiredRole }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
-        </div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#007C8C]"></div>
       </div>
     );
   }
@@ -19,7 +16,13 @@ export function ProtectedRoute({ children, requiredRole }) {
     return <Navigate to="/" replace />;
   }
 
-  if (requiredRole && user.role !== requiredRole) {
+  // FIX: If the route requires MANAGER, allow both ADMIN and MANAGER
+  if (requiredRole === 'MANAGER' && !['ADMIN', 'MANAGER'].includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // FIX: If the route requires ADMIN, strictly enforce ADMIN only
+  if (requiredRole === 'ADMIN' && user.role !== 'ADMIN') {
     return <Navigate to="/dashboard" replace />;
   }
 
