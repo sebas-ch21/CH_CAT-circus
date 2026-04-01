@@ -37,7 +37,7 @@ export function Login() {
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-3 mb-6">
             <ShieldCheck className="w-10 h-10 text-charlie-teal" strokeWidth={2} />
-            <h1 className="text-3xl font-semibold text-gray-900">Charlie Admissions</h1>
+            <h1 className="text-3xl font-semibold text-gray-900">CH BPS Circus</h1>
           </div>
           <p className="text-gray-600">Welcome back to the dispatcher system</p>
         </div>
