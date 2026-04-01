@@ -1,0 +1,365 @@
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { ShieldCheck, LogOut, CircleAlert as AlertCircle, Clock, CircleCheck as CheckCircle2, User, Loader } from 'lucide-react';
+
+export function ICDashboard() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [assignment, setAssignment] = useState(null);
+  const [inQueue, setInQueue] = useState(false);
+  const [queuedAt, setQueuedAt] = useState(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    checkStatus();
+    const interval = setInterval(checkStatus, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!inQueue) return;
+
+    const timer = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - queuedAt) / 1000));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [inQueue, queuedAt]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`bps_slots_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'bps_slots',
+          filter: `assigned_ic_id=eq.${user.id}`,
+        },
+        () => {
+          checkStatus();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [user]);
+
+  const checkStatus = async () => {
+    if (!user?.id) return;
+
+    try {
+      const { data: queueData } = await supabase
+        .from('queue_entries')
+        .select('*')
+        .eq('ic_id', user.id)
+        .maybeSingle();
+
+      if (queueData) {
+        setInQueue(true);
+        setQueuedAt(new Date(queueData.entered_at).getTime());
+      } else {
+        setInQueue(false);
+        setQueuedAt(null);
+      }
+
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profileData?.current_status === 'BUSY' && !inQueue) {
+        const { data: slotData } = await supabase
+          .from('bps_slots')
+          .select('*')
+          .eq('assigned_ic_id', user.id)
+          .eq('status', 'ASSIGNED')
+          .maybeSingle();
+
+        if (slotData) {
+          setAssignment(slotData);
+        }
+      } else {
+        setAssignment(null);
+      }
+    } catch (error) {
+      console.error('Error checking status:', error);
+    }
+  };
+
+  const handleNoShow = async () => {
+    setLoading(true);
+    try {
+      await supabase.from('queue_entries').insert({
+        ic_id: user.id,
+        entered_at: new Date().toISOString(),
+      });
+
+      await supabase
+        .from('profiles')
+        .update({ current_status: 'IN_QUEUE' })
+        .eq('id', user.id);
+
+      setInQueue(true);
+      setQueuedAt(Date.now());
+    } catch (error) {
+      console.error('Error entering queue:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmReceipt = async () => {
+    setConfirming(true);
+    try {
+      await supabase
+        .from('queue_entries')
+        .delete()
+        .eq('ic_id', user.id);
+
+      await supabase
+        .from('profiles')
+        .update({ current_status: 'BUSY' })
+        .eq('id', user.id);
+
+      setInQueue(false);
+      setQueuedAt(null);
+      setElapsedTime(0);
+    } catch (error) {
+      console.error('Error confirming receipt:', error);
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  if (inQueue) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col">
+        <nav className="border-b border-gray-200 bg-white sticky top-0 z-10">
+          <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-6 h-6 text-charlie-teal" strokeWidth={2} />
+              <span className="font-semibold text-gray-900">Charlie</span>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        </nav>
+
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="w-full max-w-sm space-y-8">
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 bg-charlie-mint-light rounded-full mb-6 animate-pulse">
+                <Clock className="w-10 h-10 text-charlie-teal" />
+              </div>
+              <h1 className="text-2xl font-semibold text-gray-900 mb-3">
+                Waiting for Reassignment
+              </h1>
+              <p className="text-gray-600">
+                A manager will assign you to a new patient shortly
+              </p>
+            </div>
+
+            <div className="bg-gray-50 rounded-2xl p-8 text-center border border-gray-200">
+              <p className="text-sm text-gray-600 mb-3 font-medium">Time in Queue</p>
+              <p className="text-6xl font-bold text-charlie-teal font-mono">
+                {formatTime(elapsedTime)}
+              </p>
+            </div>
+
+            {assignment && (
+              <div className="space-y-4">
+                <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <CheckCircle2 className="w-6 h-6 text-green-600" />
+                    <p className="font-semibold text-green-900">New Assignment Ready!</p>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-green-700 font-medium mb-1">Patient ID</p>
+                      <p className="text-lg font-semibold text-green-900">
+                        {assignment.patient_identifier}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-green-700 font-medium mb-1">Appointment Time</p>
+                      <p className="text-lg font-semibold text-green-900">
+                        {new Date(assignment.start_time).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleConfirmReceipt}
+                  disabled={confirming}
+                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-5 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3"
+                >
+                  {confirming ? (
+                    <>
+                      <Loader className="w-6 h-6 animate-spin" />
+                      Confirming...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-6 h-6" />
+                      Confirm & Resume
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (assignment) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col">
+        <nav className="border-b border-gray-200 bg-white sticky top-0 z-10">
+          <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-6 h-6 text-charlie-teal" strokeWidth={2} />
+              <span className="font-semibold text-gray-900">Charlie</span>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        </nav>
+
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="w-full max-w-sm space-y-6">
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-charlie-mint-light rounded-full mb-4">
+                <User className="w-8 h-8 text-charlie-teal" />
+              </div>
+              <h1 className="text-2xl font-semibold text-gray-900 mb-2">
+                Current Assignment
+              </h1>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-charlie-mint-light border-2 border-charlie-mint rounded-2xl p-6">
+                <p className="text-sm text-charlie-teal font-medium mb-2">Patient ID</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  {assignment.patient_identifier}
+                </p>
+              </div>
+
+              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                <p className="text-sm text-gray-600 font-medium mb-2">
+                  Appointment Time
+                </p>
+                <p className="text-xl font-semibold text-gray-900">
+                  {new Date(assignment.start_time).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleNoShow}
+              disabled={loading}
+              className="w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-lg"
+            >
+              {loading ? (
+                <>
+                  <Loader className="w-6 h-6 animate-spin" />
+                  Entering Queue...
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-7 h-7" />
+                  <span>Patient No-Show:<br/>Enter Reassignment Queue</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-white flex flex-col">
+      <nav className="border-b border-gray-200 bg-white sticky top-0 z-10">
+        <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-6 h-6 text-charlie-teal" strokeWidth={2} />
+            <span className="font-semibold text-gray-900">Charlie</span>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
+      </nav>
+
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center bg-green-50 border border-green-200 rounded-2xl p-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
+              <CheckCircle2 className="w-8 h-8 text-green-600" />
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+              You're Available
+            </h2>
+            <p className="text-gray-600">
+              Ready to accept new appointments
+            </p>
+          </div>
+
+          <button
+            onClick={handleNoShow}
+            disabled={loading}
+            className="w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-bold py-8 px-6 rounded-2xl text-lg transition-all flex flex-col items-center justify-center gap-4 shadow-lg min-h-[160px]"
+          >
+            {loading ? (
+              <>
+                <Loader className="w-8 h-8 animate-spin" />
+                <span>Entering Queue...</span>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="w-12 h-12" />
+                <span className="leading-tight">Patient No-Show:<br/>Enter Reassignment Queue</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
