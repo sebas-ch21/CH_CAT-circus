@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { CSVUploadZone } from '../components/CSVUploadZone';
 import { TopNav } from '../components/TopNav';
-import { Users, Calendar, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Loader, Info } from 'lucide-react';
+import { Users, Calendar, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Loader, Info, Lock, Eye, EyeOff } from 'lucide-react';
 
 export function AdminPanel() {
   const [profiles, setProfiles] = useState([]);
@@ -11,11 +11,35 @@ export function AdminPanel() {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [staffMessage, setStaffMessage] = useState('');
   const [slotsMessage, setSlotsMessage] = useState('');
+  const [currentPin, setCurrentPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [showCurrentPin, setShowCurrentPin] = useState(false);
+  const [showNewPin, setShowNewPin] = useState(false);
+  const [pinMessage, setPinMessage] = useState('');
+  const [updatingPin, setUpdatingPin] = useState(false);
 
   useEffect(() => {
     fetchProfiles();
     fetchSlots();
+    fetchCurrentPin();
   }, []);
+
+  const fetchCurrentPin = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('setting_value')
+        .eq('setting_key', 'access_pin')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data) {
+        setCurrentPin(data.setting_value);
+      }
+    } catch (error) {
+      console.error('Error fetching current PIN:', error);
+    }
+  };
 
   const fetchProfiles = async () => {
     try {
@@ -129,6 +153,37 @@ export function AdminPanel() {
     }
   };
 
+  const handleUpdatePin = async () => {
+    if (!newPin || newPin.length < 4) {
+      setPinMessage('Error: PIN must be at least 4 characters');
+      return;
+    }
+
+    setUpdatingPin(true);
+    setPinMessage('');
+
+    try {
+      const { error } = await supabase
+        .from('app_settings')
+        .update({
+          setting_value: newPin,
+          updated_at: new Date().toISOString()
+        })
+        .eq('setting_key', 'access_pin');
+
+      if (error) throw error;
+
+      setCurrentPin(newPin);
+      setNewPin('');
+      setPinMessage('Successfully updated access PIN');
+      setTimeout(() => setPinMessage(''), 4000);
+    } catch (error) {
+      setPinMessage(`Error: ${error.message}`);
+    } finally {
+      setUpdatingPin(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <TopNav />
@@ -142,11 +197,103 @@ export function AdminPanel() {
           </div>
         </div>
 
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-[#F0EDFF] rounded-lg">
+              <Lock className="w-6 h-6 text-[#5E4791]" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Security Settings</h3>
+              <p className="text-sm text-gray-600">Manage access PIN for Admin and Manager modes</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Current Access PIN
+              </label>
+              <div className="relative">
+                <input
+                  type={showCurrentPin ? 'text' : 'password'}
+                  value={currentPin}
+                  readOnly
+                  className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg bg-gray-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPin(!showCurrentPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {showCurrentPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                New Access PIN
+              </label>
+              <div className="relative">
+                <input
+                  type={showNewPin ? 'text' : 'password'}
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value)}
+                  placeholder="Enter new PIN (min 4 characters)"
+                  className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5E4791] focus:border-transparent"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPin(!showNewPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {showNewPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={handleUpdatePin}
+              disabled={!newPin || updatingPin}
+              className="w-full bg-[#5E4791] hover:bg-[#4a3773] disabled:bg-gray-300 disabled:text-gray-500 text-white font-bold py-3 px-6 rounded-lg transition-all flex items-center justify-center gap-2"
+            >
+              {updatingPin ? (
+                <>
+                  <Loader className="w-5 h-5 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <Lock className="w-5 h-5" />
+                  Update Access PIN
+                </>
+              )}
+            </button>
+
+            {pinMessage && (
+              <div
+                className={`flex gap-3 p-4 rounded-xl ${
+                  pinMessage.includes('Successfully')
+                    ? 'bg-green-50 text-green-700 border border-green-200'
+                    : 'bg-red-50 text-red-700 border border-red-200'
+                }`}
+              >
+                {pinMessage.includes('Successfully') ? (
+                  <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                )}
+                <p className="text-sm">{pinMessage}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-charlie-mint-light rounded-lg">
-                <Users className="w-6 h-6 text-charlie-teal" />
+              <div className="p-2 bg-[#E0F7FA] rounded-lg">
+                <Users className="w-6 h-6 text-[#007C8C]" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Staff Roster</h3>
@@ -179,7 +326,7 @@ export function AdminPanel() {
             )}
 
             {loadingStaff && (
-              <div className="mt-4 flex items-center gap-3 text-charlie-teal">
+              <div className="mt-4 flex items-center gap-3 text-[#007C8C]">
                 <Loader className="w-5 h-5 animate-spin" />
                 <span className="text-sm font-medium">Processing staff data...</span>
               </div>
@@ -204,7 +351,7 @@ export function AdminPanel() {
                         <p className="text-xs text-gray-600">{profile.role}</p>
                       </div>
                       {profile.tier_rank && (
-                        <span className="px-2.5 py-1 bg-charlie-mint-light text-charlie-teal text-xs font-semibold rounded-full">
+                        <span className="px-2.5 py-1 bg-[#E0F7FA] text-[#007C8C] text-xs font-semibold rounded-full">
                           Tier {profile.tier_rank}
                         </span>
                       )}
@@ -217,8 +364,8 @@ export function AdminPanel() {
 
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-charlie-mint-light rounded-lg">
-                <Calendar className="w-6 h-6 text-charlie-teal" />
+              <div className="p-2 bg-[#E0F7FA] rounded-lg">
+                <Calendar className="w-6 h-6 text-[#007C8C]" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">BPS Appointment Slots</h3>
@@ -251,7 +398,7 @@ export function AdminPanel() {
             )}
 
             {loadingSlots && (
-              <div className="mt-4 flex items-center gap-3 text-charlie-teal">
+              <div className="mt-4 flex items-center gap-3 text-[#007C8C]">
                 <Loader className="w-5 h-5 animate-spin" />
                 <span className="text-sm font-medium">Processing BPS slots...</span>
               </div>

@@ -6,11 +6,16 @@ const AuthContext = createContext();
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isPinVerified, setIsPinVerified] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('clinicalUser');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
+    }
+    const storedPinVerified = localStorage.getItem('pinVerified');
+    if (storedPinVerified === 'true') {
+      setIsPinVerified(true);
     }
     setLoading(false);
   }, []);
@@ -42,11 +47,35 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem('clinicalUser');
+    localStorage.removeItem('pinVerified');
     setUser(null);
+    setIsPinVerified(false);
+  };
+
+  const verifyPin = async (inputPin) => {
+    try {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('setting_value')
+        .eq('setting_key', 'access_pin')
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data && data.setting_value === inputPin) {
+        setIsPinVerified(true);
+        localStorage.setItem('pinVerified', 'true');
+        return { success: true };
+      } else {
+        return { success: false, error: 'Incorrect PIN' };
+      }
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, isPinVerified, verifyPin }}>
       {children}
     </AuthContext.Provider>
   );
