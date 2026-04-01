@@ -1,10 +1,11 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ShieldCheck, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export function TopNav() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = () => {
     logout();
@@ -13,6 +14,10 @@ export function TopNav() {
 
   const canAccessAdmin = user?.role === 'ADMIN';
   const canAccessManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+
+  const isAdminPage = location.pathname === '/admin';
+  const isManagerPage = location.pathname === '/manager';
+  const isICPage = location.pathname === '/dashboard';
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-10">
@@ -28,7 +33,11 @@ export function TopNav() {
               {canAccessAdmin && (
                 <button
                   onClick={() => navigate('/admin')}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                    isAdminPage
+                      ? 'bg-gray-200 text-gray-900'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
                 >
                   Admin Mode
                 </button>
@@ -36,14 +45,22 @@ export function TopNav() {
               {canAccessManager && (
                 <button
                   onClick={() => navigate('/manager')}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                    isManagerPage
+                      ? 'bg-gray-200 text-gray-900'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
                 >
                   Manager Mode
                 </button>
               )}
               <button
                 onClick={() => navigate('/dashboard')}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                  isICPage
+                    ? 'bg-gray-200 text-gray-900'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
               >
                 IC Mode
               </button>
