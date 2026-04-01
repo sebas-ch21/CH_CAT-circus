@@ -15,9 +15,15 @@ export function TopNav() {
   const canAccessAdmin = user?.role === 'ADMIN';
   const canAccessManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
 
-  const isAdminPage = location.pathname === '/admin';
-  const isManagerPage = location.pathname === '/manager';
-  const isICPage = location.pathname === '/dashboard';
+  // This applies the gray box to whichever page you are currently on
+  const getNavClass = (path) => {
+    const isActive = location.pathname === path;
+    return `px-4 py-2 text-sm transition-all rounded-lg ${
+      isActive
+        ? 'bg-gray-200 text-gray-900 font-bold shadow-sm'
+        : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
+    }`;
+  };
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-10">
@@ -31,37 +37,16 @@ export function TopNav() {
 
             <div className="flex items-center gap-2">
               {canAccessAdmin && (
-                <button
-                  onClick={() => navigate('/admin')}
-                  className={`px-4 py-2 text-sm rounded-lg transition ${
-                    isAdminPage
-                      ? 'bg-gray-200 text-gray-900 font-bold'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
+                <button onClick={() => navigate('/admin')} className={getNavClass('/admin')}>
                   Admin Mode
                 </button>
               )}
               {canAccessManager && (
-                <button
-                  onClick={() => navigate('/manager')}
-                  className={`px-4 py-2 text-sm rounded-lg transition ${
-                    isManagerPage
-                      ? 'bg-gray-200 text-gray-900 font-bold'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
+                <button onClick={() => navigate('/manager')} className={getNavClass('/manager')}>
                   Manager Mode
                 </button>
               )}
-              <button
-                onClick={() => navigate('/dashboard')}
-                className={`px-4 py-2 text-sm rounded-lg transition ${
-                  isICPage
-                    ? 'bg-gray-200 text-gray-900 font-bold'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
+              <button onClick={() => navigate('/dashboard')} className={getNavClass('/dashboard')}>
                 IC Mode
               </button>
             </div>
@@ -69,7 +54,7 @@ export function TopNav() {
 
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+            className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition"
           >
             <LogOut className="w-5 h-5" />
             <span>Logout</span>
