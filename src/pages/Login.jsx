@@ -69,10 +69,10 @@ export function Login() {
             )}
 
             <button
-              type="submit"
-              disabled={loading || !email}
-              className="w-full bg-charlie-teal hover:bg-charlie-teal-dark disabled:bg-gray-300 text-white font-semibold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2"
-            >
+  type="submit"
+  disabled={loading}
+  className="w-full bg-[#007C8C] hover:bg-[#006070] text-white font-semibold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2"
+>
               {loading ? (
                 <>
                   <Loader className="w-5 h-5 animate-spin" />
