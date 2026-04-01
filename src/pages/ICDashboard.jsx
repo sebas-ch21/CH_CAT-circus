@@ -171,7 +171,7 @@ export function ICDashboard() {
               <button
                 onClick={handleExitQueue}
                 disabled={exiting}
-                className="w-full bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 text-gray-900 font-medium py-3 px-6 rounded-xl transition-all"
+                className="w-full bg-[#A890D3] hover:bg-[#8B6FC4] disabled:bg-gray-400 text-gray-900 font-extrabold py-8 px-6 rounded-2xl text-lg transition-all flex flex-col items-center justify-center gap-4 shadow-lg min-h-[160px]"
               >
                 {exiting ? (
                   <>
@@ -210,7 +210,7 @@ export function ICDashboard() {
                 <button
                   onClick={handleConfirmReceipt}
                   disabled={confirming}
-                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-5 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3"
+                  className="w-full bg-[#A890D3] hover:bg-[#8B6FC4] disabled:bg-gray-400 text-gray-900 font-extrabold py-8 px-6 rounded-2xl text-lg transition-all flex flex-col items-center justify-center gap-4 shadow-lg min-h-[160px]"
                 >
                   {confirming ? (
                     <>
