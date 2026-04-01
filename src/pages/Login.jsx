@@ -12,6 +12,8 @@ export function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!email) return; // Prevent empty submission
+    
     setError('');
     setLoading(true);
 
@@ -37,13 +39,12 @@ export function Login() {
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-3 mb-6">
             <ShieldCheck className="w-10 h-10 text-[#007C8C]" strokeWidth={2} />
-            <h1 className="text-3xl font-semibold text-gray-900">CH BPS Circus</h1>
+            <h1 className="text-3xl font-semibold text-gray-900">Charlie Admissions</h1>
           </div>
           <p className="text-gray-600">Welcome back to the dispatcher system</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
-
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
@@ -55,7 +56,7 @@ export function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="your.email@clinic.com"
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-charlie-teal focus:border-transparent outline-none transition"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#007C8C] focus:border-transparent outline-none transition"
                 required
                 disabled={loading}
               />
@@ -70,12 +71,8 @@ export function Login() {
 
             <button
               type="submit"
-              disabled={loading || !email}
-              className={`w-full font-semibold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 ${
-                loading || !email
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-[#A890D3] hover:bg-[#8B6FC4] text-white'
-              }`}
+              disabled={loading}
+              className="w-full bg-[#007C8C] hover:bg-[#006070] text-white font-semibold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
