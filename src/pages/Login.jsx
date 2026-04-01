@@ -10,17 +10,23 @@ export function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  // Strict validation: requires text, @ symbol, text, a dot, and text.
   const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!isValidEmail) return; 
+    
+    // Hardcoded custom error message
+    const customError = "User not in system, reach out to Clinical Admissions Leadership";
+
+    // If email format is bad, immediately show the error
+    if (!isValidEmail) {
+      setError(customError);
+      return;
+    }
     
     setError('');
     setLoading(true);
 
-    // This simulates sending the OTP code and logging in
     const result = await login(email);
     if (result.success) {
       const user = result.user;
@@ -28,7 +34,8 @@ export function Login() {
       else if (user.role === 'MANAGER') navigate('/manager');
       else if (user.role === 'IC') navigate('/dashboard');
     } else {
-      setError(result.error);
+      // If Supabase says the user doesn't exist, show our custom error
+      setError(customError);
     }
     setLoading(false);
   };
@@ -64,19 +71,19 @@ export function Login() {
             {error && (
               <div className="flex gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
                 <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700">{error}</p>
+                <p className="text-sm text-red-700 font-medium">{error}</p>
               </div>
             )}
 
             <button
               type="submit"
-              disabled={!isValidEmail || loading}
-              className="w-full font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 bg-[#5E4791] text-white hover:bg-[#4A3770] shadow-md disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none disabled:cursor-not-allowed cursor-pointer"
+              disabled={loading}
+              className="w-full bg-[#5E4791] hover:bg-[#4A3770] text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {loading ? (
-                <><Loader className="w-5 h-5 animate-spin" /> Sending Code...</>
+                <><Loader className="w-5 h-5 animate-spin" /> Signing In...</>
               ) : (
-                'Send Login Code'
+                'Sign In'
               )}
             </button>
           </form>
