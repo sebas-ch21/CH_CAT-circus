@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Eye, EyeOff } from 'lucide-react';
+import { Lock, Eye, EyeOff, Loader } from 'lucide-react';
 
 export function ProtectedRoute({ children, requiredRole }) {
   const { user, loading, isPinVerified, verifyPin } = useAuth();
@@ -13,93 +13,77 @@ export function ProtectedRoute({ children, requiredRole }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#007C8C]"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0F172A]"></div>
       </div>
     );
   }
 
-  if (!user) {
-    return <Navigate to="/" replace />;
+  if (!user) return <Navigate to="/" replace />;
+
+  // Enforce standard role access
+  if (requiredRole === 'MANAGER' && !['ADMIN', 'MANAGER'].includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
   }
-
-  const hasRoleAccess = () => {
-    if (requiredRole === 'MANAGER') {
-      return ['ADMIN', 'MANAGER'].includes(user.role);
-    }
-    if (requiredRole === 'ADMIN') {
-      return user.role === 'ADMIN';
-    }
-    return true;
-  };
-
-  if (!hasRoleAccess()) {
+  if (requiredRole === 'ADMIN' && user.role !== 'ADMIN') {
     return <Navigate to="/dashboard" replace />;
   }
 
-  const needsPinVerification = (requiredRole === 'ADMIN' || requiredRole === 'MANAGER') && !isPinVerified;
+  // The Lock Screen
+  if (requiredRole && !isPinVerified) {
+    const handleUnlock = async (e) => {
+      e.preventDefault();
+      setVerifying(true);
+      setPinError('');
+      
+      const result = await verifyPin(pinInput, requiredRole);
+      
+      if (!result.success) {
+        setPinError(result.error);
+      }
+      setVerifying(false);
+    };
 
-  const handlePinSubmit = async (e) => {
-    e.preventDefault();
-    setPinError('');
-    setVerifying(true);
-
-    const result = await verifyPin(pinInput);
-
-    if (!result.success) {
-      setPinError(result.error || 'Incorrect PIN');
-      setPinInput('');
-    }
-
-    setVerifying(false);
-  };
-
-  if (needsPinVerification) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm"></div>
-
-        <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
-          <div className="bg-[#0F172A] text-white px-8 py-6 rounded-t-2xl">
-            <div className="flex items-center gap-3">
-              <Lock className="w-6 h-6" />
-              <h2 className="text-2xl font-bold">Secure Access Required</h2>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-8 w-full max-w-sm">
+          <div className="flex flex-col items-center mb-6">
+            <div className="w-14 h-14 bg-[#0F172A] rounded-full flex items-center justify-center mb-4">
+              <Lock className="w-7 h-7 text-white" />
             </div>
-            <p className="text-gray-300 mt-2">Enter your access PIN to continue</p>
+            <h2 className="text-2xl font-bold text-[#0F172A]">Secure Access</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Enter the {requiredRole === 'ADMIN' ? 'Admin' : 'Manager'} PIN to continue
+            </p>
           </div>
 
-          <form onSubmit={handlePinSubmit} className="p-8">
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Access PIN
-              </label>
+          <form onSubmit={handleUnlock} className="space-y-5">
+            <div>
               <div className="relative">
                 <input
                   type={showPin ? 'text' : 'password'}
                   value={pinInput}
                   onChange={(e) => setPinInput(e.target.value)}
-                  className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5E4791] focus:border-transparent"
                   placeholder="Enter PIN"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#0F172A] focus:border-transparent outline-none pr-12 transition-all"
                   autoFocus
                 />
                 <button
                   type="button"
                   onClick={() => setShowPin(!showPin)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
                   {showPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
-              {pinError && (
-                <p className="text-red-600 text-sm mt-2">{pinError}</p>
-              )}
+              {pinError && <p className="text-red-500 text-sm mt-2 font-medium">{pinError}</p>}
             </div>
 
             <button
               type="submit"
               disabled={!pinInput || verifying}
-              className="w-full bg-[#5E4791] hover:bg-[#4a3773] disabled:bg-gray-300 disabled:text-gray-500 text-white font-bold py-3 px-6 rounded-lg transition-all"
+              className="w-full bg-[#5E4791] hover:bg-[#4A3770] text-white font-bold py-3.5 rounded-xl transition-all shadow-md disabled:opacity-70 flex items-center justify-center"
             >
-              {verifying ? 'Verifying...' : 'Unlock'}
+              {verifying ? <Loader className="w-5 h-5 animate-spin" /> : 'Unlock Workspace'}
             </button>
           </form>
         </div>
@@ -107,5 +91,6 @@ export function ProtectedRoute({ children, requiredRole }) {
     );
   }
 
+  // If they pass the PIN check, show the actual page
   return children;
 }
