@@ -210,17 +210,17 @@ export function ICDashboard() {
                 <button
                   onClick={handleConfirmReceipt}
                   disabled={confirming}
-                  className="w-full bg-charlie-purple hover:bg-charlie-purple-dark disabled:bg-gray-400 text-white font-bold py-8 px-6 rounded-2xl text-lg transition-all flex flex-col items-center justify-center gap-4 shadow-lg min-h-[160px]"
+                  className="w-full bg-[#059669] hover:bg-[#047857] disabled:bg-gray-400 text-white font-bold py-5 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3"
                 >
                   {confirming ? (
                     <>
-                      <Loader className="w-6 h-6 animate-spin" />
-                      Confirming...
+                      <Loader className="w-6 h-6 animate-spin text-white" />
+                      <span className="text-white">Confirming...</span>
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 className="w-6 h-6" />
-                      Confirm Receipt
+                      <CheckCircle2 className="w-6 h-6 text-white" />
+                      <span className="text-white">Confirm Receipt</span>
                     </>
                   )}
                 </button>
@@ -277,17 +277,17 @@ export function ICDashboard() {
             <button
               onClick={handleNoShow}
               disabled={loading}
-              className="w-full bg-charlie-purple hover:bg-charlie-purple-dark disabled:bg-gray-400 text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-lg"
+              className="w-full bg-[#A890D3] hover:bg-[#8B6FC4] disabled:bg-gray-400 text-gray-900 font-extrabold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-lg"
             >
               {loading ? (
                 <>
-                  <Loader className="w-6 h-6 animate-spin" />
-                  <span className="text-white">Entering Queue...</span>
+                  <Loader className="w-6 h-6 animate-spin text-gray-900" />
+                  <span className="text-gray-900">Entering Queue...</span>
                 </>
               ) : (
                 <>
-                  <AlertCircle className="w-7 h-7 text-white" />
-                  <span className="text-white leading-tight">Patient No-Show:<br/>Enter Reassignment Queue</span>
+                  <AlertCircle className="w-7 h-7 text-gray-900" />
+                  <span className="text-gray-900 leading-tight">Patient No-Show:<br/>Enter Reassignment Queue</span>
                 </>
               )}
             </button>
@@ -311,14 +311,14 @@ export function ICDashboard() {
             </div>
           </div>
 
-          <div className="text-center bg-charlie-purple-dark rounded-2xl p-8">
+          <div className="text-center bg-[#8B6FC4] rounded-2xl p-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-white/20 rounded-full mb-4">
               <CheckCircle2 className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-xl font-semibold text-white mb-2">
               You're Available
             </h2>
-            <p className="text-white/90">
+            <p className="text-white">
               Ready to accept new appointments
             </p>
           </div>
@@ -326,17 +326,17 @@ export function ICDashboard() {
           <button
             onClick={handleNoShow}
             disabled={loading}
-            className="w-full bg-charlie-purple hover:bg-charlie-purple-dark disabled:bg-gray-400 text-white font-bold py-8 px-6 rounded-2xl text-lg transition-all flex flex-col items-center justify-center gap-4 shadow-lg min-h-[160px]"
+            className="w-full bg-[#A890D3] hover:bg-[#8B6FC4] disabled:bg-gray-400 text-gray-900 font-extrabold py-8 px-6 rounded-2xl text-lg transition-all flex flex-col items-center justify-center gap-4 shadow-lg min-h-[160px]"
           >
             {loading ? (
               <>
-                <Loader className="w-8 h-8 animate-spin text-white" />
-                <span className="text-white">Entering Queue...</span>
+                <Loader className="w-8 h-8 animate-spin text-gray-900" />
+                <span className="text-gray-900">Entering Queue...</span>
               </>
             ) : (
               <>
-                <AlertCircle className="w-12 h-12 text-white" />
-                <span className="text-white leading-tight">Patient No-Show:<br/>Enter Reassignment Queue</span>
+                <AlertCircle className="w-12 h-12 text-gray-900" />
+                <span className="text-gray-900 leading-tight">Patient No-Show:<br/>Enter Reassignment Queue</span>
               </>
             )}
           </button>

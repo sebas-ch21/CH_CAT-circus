@@ -25,7 +25,7 @@ export function TopNav() {
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
-              <ShieldCheck className="w-7 h-7 text-charlie-teal" strokeWidth={2} />
+              <ShieldCheck className="w-7 h-7 text-[#007C8C]" strokeWidth={2} />
               <h1 className="text-xl font-semibold text-gray-900">Charlie Admissions</h1>
             </div>
 
@@ -33,10 +33,10 @@ export function TopNav() {
               {canAccessAdmin && (
                 <button
                   onClick={() => navigate('/admin')}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                  className={`px-4 py-2 text-sm rounded-lg transition ${
                     isAdminPage
-                      ? 'bg-gray-200 text-gray-900'
-                      : 'text-gray-700 hover:bg-gray-100'
+                      ? 'bg-gray-200 text-gray-900 font-bold'
+                      : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
                   Admin Mode
@@ -45,10 +45,10 @@ export function TopNav() {
               {canAccessManager && (
                 <button
                   onClick={() => navigate('/manager')}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                  className={`px-4 py-2 text-sm rounded-lg transition ${
                     isManagerPage
-                      ? 'bg-gray-200 text-gray-900'
-                      : 'text-gray-700 hover:bg-gray-100'
+                      ? 'bg-gray-200 text-gray-900 font-bold'
+                      : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
                   Manager Mode
@@ -56,10 +56,10 @@ export function TopNav() {
               )}
               <button
                 onClick={() => navigate('/dashboard')}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                className={`px-4 py-2 text-sm rounded-lg transition ${
                   isICPage
-                    ? 'bg-gray-200 text-gray-900'
-                    : 'text-gray-700 hover:bg-gray-100'
+                    ? 'bg-gray-200 text-gray-900 font-bold'
+                    : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
                 IC Mode

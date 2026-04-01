@@ -36,7 +36,7 @@ export function Login() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-3 mb-6">
-            <ShieldCheck className="w-10 h-10 text-charlie-teal" strokeWidth={2} />
+            <ShieldCheck className="w-10 h-10 text-[#007C8C]" strokeWidth={2} />
             <h1 className="text-3xl font-semibold text-gray-900">CH BPS Circus</h1>
           </div>
           <p className="text-gray-600">Welcome back to the dispatcher system</p>
@@ -74,7 +74,7 @@ export function Login() {
               className={`w-full font-semibold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 ${
                 loading || !email
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-charlie-purple hover:bg-charlie-purple-dark text-white'
+                  : 'bg-[#A890D3] hover:bg-[#8B6FC4] text-white'
               }`}
             >
               {loading ? (
