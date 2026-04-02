@@ -84,13 +84,16 @@ export function ManagerCenter() {
     }
   };
 
-  const formatTime = (isoString) => {
-    return new Date(isoString).toLocaleTimeString('en-US', {
-      timeZone: timeZone,
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZoneName: 'short'
-    });
+  // Explicitly calculate and format both the BPS Time and the Overflow Time
+  const getDualTimes = (isoString) => {
+    const ofDate = new Date(isoString);
+    // The BPS start time is exactly 15 minutes prior to the Overflow time
+    const bpsDate = new Date(ofDate.getTime() - 15 * 60000);
+    
+    return {
+      bps: bpsDate.toLocaleTimeString('en-US', { timeZone: timeZone, hour: 'numeric', minute: '2-digit' }),
+      of: ofDate.toLocaleTimeString('en-US', { timeZone: timeZone, hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+    };
   };
 
   return (
@@ -172,15 +175,27 @@ export function ManagerCenter() {
                 <span className="bg-[#E0F5F6] text-[#007C8C] px-2.5 py-0.5 rounded-full text-xs font-bold">{openSlots.length}</span>
               </div>
               <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-                {openSlots.map(slot => (
-                  <button key={slot.id} onClick={() => setSelectedSlot(slot)} className={`w-full text-left p-4 rounded-xl border-2 transition-all ${selectedSlot?.id === slot.id ? 'border-[#007C8C] bg-[#E0F5F6] shadow-sm' : 'border-gray-100 hover:border-gray-300 bg-white shadow-sm'}`}>
-                    <div className="font-bold text-lg text-[#0F172A] mb-1">{slot.patient_identifier}</div>
-                    <div className="flex justify-between items-center text-sm mt-2">
-                      <span className="text-gray-600 font-bold bg-gray-100 px-2 py-1 rounded">{formatTime(slot.start_time)}</span>
-                      {slot.host_manager && <span className="text-[#5E4791] font-semibold text-xs bg-purple-50 px-2 py-1 rounded border border-purple-100">Host: {slot.host_manager.split('@')[0]}</span>}
-                    </div>
-                  </button>
-                ))}
+                {openSlots.map(slot => {
+                  const times = getDualTimes(slot.start_time);
+                  return (
+                    <button key={slot.id} onClick={() => setSelectedSlot(slot)} className={`w-full text-left p-4 rounded-xl border-2 transition-all ${selectedSlot?.id === slot.id ? 'border-[#007C8C] bg-[#E0F5F6] shadow-sm' : 'border-gray-100 hover:border-gray-300 bg-white shadow-sm'}`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="font-bold text-lg text-[#0F172A]">{slot.patient_identifier}</div>
+                        {slot.host_manager && <span className="text-[#007C8C] font-semibold text-[10px] uppercase tracking-wider bg-[#E0F5F6] px-2 py-1 rounded-md">Host: {slot.host_manager.split('@')[0]}</span>}
+                      </div>
+                      <div className="flex flex-col gap-1.5 mt-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-500 font-bold">BPS Start:</span>
+                          <span className="font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">{times.bps}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-[#5E4791] font-bold">Overflow Time:</span>
+                          <span className="font-bold text-[#5E4791] bg-purple-50 border border-purple-100 px-2 py-0.5 rounded">{times.of}</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -200,8 +215,17 @@ export function ManagerCenter() {
                   <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-2 flex items-center gap-2"><Calendar className="w-3 h-3"/> Selected Room (Slot)</p>
                   {selectedSlot ? (
                     <div>
-                      <p className="font-bold text-lg text-white">{selectedSlot.patient_identifier}</p>
-                      <p className="text-sm text-gray-300 mt-2 font-medium">{formatTime(selectedSlot.start_time)} {selectedSlot.host_manager && `• Host: ${selectedSlot.host_manager.split('@')[0]}`}</p>
+                      <p className="font-bold text-lg text-white mb-3">{selectedSlot.patient_identifier}</p>
+                      <div className="bg-black/20 rounded-lg p-3 space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">BPS Time:</span>
+                          <span className="font-semibold text-gray-200">{getDualTimes(selectedSlot.start_time).bps}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-purple-300 font-bold">OF Time:</span>
+                          <span className="font-bold text-purple-200">{getDualTimes(selectedSlot.start_time).of}</span>
+                        </div>
+                      </div>
                     </div>
                   ) : <p className="text-gray-500 italic font-medium">Waiting for selection...</p>}
                 </div>
@@ -229,24 +253,29 @@ export function ManagerCenter() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b-2 border-gray-100">
-                    <th className="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Time</th>
-                    <th className="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Patient / Room ID</th>
-                    <th className="p-4 text-xs font-bold text-[#5E4791] uppercase tracking-widest">Assigned Staff (IC)</th>
-                    <th className="p-4 text-xs font-bold text-[#007C8C] uppercase tracking-widest">Overflow Host</th>
+                    <th className="p-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">BPS Time</th>
+                    <th className="p-4 text-[10px] font-bold text-[#5E4791] uppercase tracking-widest">Overflow Time</th>
+                    <th className="p-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Room ID</th>
+                    <th className="p-4 text-[10px] font-bold text-[#007C8C] uppercase tracking-widest">Assigned Staff (IC)</th>
+                    <th className="p-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Overflow Host</th>
                   </tr>
                 </thead>
                 <tbody>
                   {scheduledSlots.length === 0 ? (
-                    <tr><td colSpan="4" className="p-12 text-center text-gray-400 font-medium border-2 border-dashed rounded-xl mt-4">No slots scheduled yet today.</td></tr>
+                    <tr><td colSpan="5" className="p-12 text-center text-gray-400 font-medium border-2 border-dashed rounded-xl mt-4">No slots scheduled yet today.</td></tr>
                   ) : (
-                    scheduledSlots.map(slot => (
-                      <tr key={slot.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                        <td className="p-4 font-bold text-[#0F172A]">{formatTime(slot.start_time)}</td>
-                        <td className="p-4 font-bold text-gray-700">{slot.patient_identifier}</td>
-                        <td className="p-4 font-semibold text-[#5E4791]">{slot.profiles?.email || 'Unknown'}</td>
-                        <td className="p-4 font-semibold text-[#007C8C]">{slot.host_manager || 'Unassigned'}</td>
-                      </tr>
-                    ))
+                    scheduledSlots.map(slot => {
+                      const times = getDualTimes(slot.start_time);
+                      return (
+                        <tr key={slot.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                          <td className="p-4 font-semibold text-gray-600">{times.bps}</td>
+                          <td className="p-4 font-bold text-[#5E4791] bg-purple-50/50">{times.of}</td>
+                          <td className="p-4 font-bold text-[#0F172A]">{slot.patient_identifier}</td>
+                          <td className="p-4 font-semibold text-[#007C8C]">{slot.profiles?.email || 'Unknown'}</td>
+                          <td className="p-4 font-semibold text-gray-500">{slot.host_manager || 'Unassigned'}</td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -275,16 +304,16 @@ export function ManagerCenter() {
               
               <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm space-y-4">
                 <div className="flex justify-between items-center pb-4 border-b border-gray-100">
-                  <span className="text-sm font-bold text-gray-400 uppercase tracking-widest">Staff Member</span>
-                  <span className="font-bold text-[#5E4791] text-lg">{selectedIC.profiles.email.split('@')[0]}</span>
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Staff Member</span>
+                  <span className="font-bold text-[#007C8C] text-lg">{selectedIC.profiles.email.split('@')[0]}</span>
                 </div>
                 <div className="flex justify-between items-center pb-4 border-b border-gray-100">
-                  <span className="text-sm font-bold text-gray-400 uppercase tracking-widest">Room ID</span>
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Room ID</span>
                   <span className="font-bold text-[#0F172A] text-lg">{selectedSlot.patient_identifier}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm font-bold text-gray-400 uppercase tracking-widest">Meeting Time</span>
-                  <span className="font-bold text-[#007C8C] text-lg">{formatTime(selectedSlot.start_time)}</span>
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Overflow Time</span>
+                  <span className="font-bold text-[#5E4791] text-lg bg-purple-50 px-3 py-1 rounded-lg border border-purple-100">{getDualTimes(selectedSlot.start_time).of}</span>
                 </div>
               </div>
             </div>
