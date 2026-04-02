@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
 import { CSVUploadZone } from '../components/CSVUploadZone';
-import { Users, Calendar as CalendarIcon, ShieldCheck, Search, Trash2, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Loader, Eye, EyeOff, Plus, X, ArrowRight } from 'lucide-react';
+import { 
+  Users, Calendar as CalendarIcon, ShieldCheck, Search, Trash2, 
+  AlertCircle, CheckCircle, Loader, Eye, EyeOff, Plus, X, ArrowRight
+} from 'lucide-react';
 
 const TIME_INTERVALS = [
   { bps_mt: '07:00 AM', of_mt: '07:15 AM', of_ct: '08:15 AM', val: '07:00', of_val: '07:15' },
@@ -32,12 +35,14 @@ export function AdminPanel() {
   const [activeTab, setActiveTab] = useState('circus'); 
   const [profiles, setProfiles] = useState([]);
   const [managers, setManagers] = useState([]);
+  const [slots, setSlots] = useState([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
   // Capacity Circus States
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [planData, setPlanData] = useState({});
+  const [calcPercentage, setCalcPercentage] = useState(30);
   const [publishing, setPublishing] = useState(false);
   const [publishMessage, setPublishMessage] = useState(null);
 
@@ -57,19 +62,16 @@ export function AdminPanel() {
   const [newAdminPin, setNewAdminPin] = useState('');
   const [showAdminPin, setShowAdminPin] = useState(false);
   const [showNewAdminPin, setShowNewAdminPin] = useState(false);
-  const [updatingAdmin, setUpdatingAdmin] = useState(false);
-  const [adminPinMessage, setAdminPinMessage] = useState(null);
-
+  
   const [currentManagerPin, setCurrentManagerPin] = useState('charliemanager');
   const [newManagerPin, setNewManagerPin] = useState('');
   const [showManagerPin, setShowManagerPin] = useState(false);
   const [showNewManagerPin, setShowNewManagerPin] = useState(false);
-  const [updatingManager, setUpdatingManager] = useState(false);
-  const [managerPinMessage, setManagerPinMessage] = useState(null);
 
   useEffect(() => {
     fetchProfiles();
     fetchPins();
+    fetchSlots();
   }, []);
 
   useEffect(() => {
@@ -84,6 +86,11 @@ export function AdminPanel() {
     }
   };
 
+  const fetchSlots = async () => {
+    const { data } = await supabase.from('bps_slots').select('*').order('start_time', { ascending: true });
+    if (data) setSlots(data);
+  };
+
   const fetchPins = async () => {
     const { data } = await supabase.from('app_settings').select('*');
     if (data) {
@@ -96,17 +103,44 @@ export function AdminPanel() {
 
   // --- CAPACITY CIRCUS LOGIC ---
   const loadDailyPlan = async (dateStr) => {
-    const { data, error } = await supabase.from('daily_capacity_plans').select('plan_data').eq('plan_date', dateStr).maybeSingle();
+    const { data } = await supabase.from('daily_capacity_plans').select('plan_data').eq('plan_date', dateStr).maybeSingle();
     
+    let loadedIntervals = {};
+    let loadedCalc = 30;
+
     if (data && data.plan_data) {
-      setPlanData(data.plan_data);
+      if (data.plan_data.hasOwnProperty('calcPercentage')) {
+        loadedCalc = data.plan_data.calcPercentage;
+        loadedIntervals = data.plan_data.intervals;
+      } else {
+        loadedIntervals = data.plan_data; 
+      }
     } else {
-      const initial = {};
       TIME_INTERVALS.forEach(int => {
-        initial[int.val] = { attendees: '', suggested: 0, override: '', assignments: [] };
+        loadedIntervals[int.val] = { attendees: '', suggested: 0, override: '', assignments: [] };
       });
-      setPlanData(initial);
     }
+
+    setCalcPercentage(loadedCalc);
+    setPlanData(loadedIntervals);
+  };
+
+  const handleCalcChange = (e) => {
+    const newPct = parseFloat(e.target.value) || 0;
+    setCalcPercentage(newPct);
+    
+    setPlanData(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(timeVal => {
+        const row = { ...updated[timeVal] };
+        if (row.attendees !== '') {
+          const num = parseInt(row.attendees) || 0;
+          row.suggested = num <= 12 ? 0 : Math.ceil(num * (newPct / 100));
+        }
+        updated[timeVal] = row;
+      });
+      return updated;
+    });
   };
 
   const updateInterval = (timeVal, field, value) => {
@@ -117,7 +151,7 @@ export function AdminPanel() {
 
       if (field === 'attendees') {
         const num = parseInt(value) || 0;
-        row.suggested = num <= 12 ? 0 : Math.ceil(num * 0.3);
+        row.suggested = num <= 12 ? 0 : Math.ceil(num * (calcPercentage / 100));
       }
       
       updated[timeVal] = row;
@@ -154,35 +188,11 @@ export function AdminPanel() {
     setPublishMessage(null);
 
     // Save Plan State
-    const { error: planError } = await supabase.from('daily_capacity_plans').upsert({
+    await supabase.from('daily_capacity_plans').upsert({
       plan_date: selectedDate,
-      plan_data: planData
+      plan_data: { calcPercentage, intervals: planData }
     }, { onConflict: 'plan_date' });
 
-    if (planError) {
-      setPublishMessage({ type: 'error', text: `Failed to save plan: ${planError.message}` });
-      setPublishing(false);
-      return;
-    }
-
-    // Force strict UTC dates based on MT selection
-    const startOfDayUTC = new Date(`${selectedDate}T00:00:00-06:00`).toISOString();
-    const endOfDayUTC = new Date(`${selectedDate}T23:59:59-06:00`).toISOString();
-
-    // Clear existing open slots to avoid duplicates
-    const { error: deleteError } = await supabase.from('bps_slots')
-      .delete()
-      .gte('start_time', startOfDayUTC)
-      .lte('start_time', endOfDayUTC)
-      .eq('status', 'OPEN');
-
-    if (deleteError) {
-      setPublishMessage({ type: 'error', text: `Failed to clear old slots: ${deleteError.message}` });
-      setPublishing(false);
-      return;
-    }
-
-    // Generate Slots using the OF Time (not the BPS time)
     const slotsToInsert = [];
     Object.entries(planData).forEach(([timeVal, row]) => {
       const interval = TIME_INTERVALS.find(t => t.val === timeVal);
@@ -191,10 +201,10 @@ export function AdminPanel() {
       row.assignments.forEach(assign => {
         if (assign.email && assign.count > 0) {
           for (let i = 0; i < assign.count; i++) {
-            // Strict offset to prevent browser timezone shifts
-            const exactSlotTime = new Date(`${selectedDate}T${interval.of_val}:00-06:00`);
+            // Using straight local time string parsing to prevent timezone offset bugs
+            const exactSlotTime = new Date(`${selectedDate}T${interval.of_val}:00`);
             slotsToInsert.push({
-              patient_identifier: `OF-${interval.of_val}-${assign.email.split('@')[0].toUpperCase()}-${i+1}`,
+              patient_identifier: `OF-${interval.of_val}-${assign.email.split('@')[0].toUpperCase()}-${Math.floor(Math.random() * 1000)}`, // Randomized suffix to prevent key clashing
               start_time: exactSlotTime.toISOString(),
               host_manager: assign.email,
               status: 'OPEN'
@@ -204,18 +214,28 @@ export function AdminPanel() {
       });
     });
 
-    if (slotsToInsert.length > 0) {
-      const { error: insertError } = await supabase.from('bps_slots').insert(slotsToInsert);
-      if (insertError) {
-        setPublishMessage({ type: 'error', text: `Failed to insert slots: ${insertError.message}` });
-        setPublishing(false);
-        return;
-      }
+    if (slotsToInsert.length === 0) {
+      setPublishMessage({ type: 'error', text: 'No slots to publish! You must select a manager from the dropdown to assign slots.' });
+      setPublishing(false);
+      return;
     }
 
-    setPublishMessage({ type: 'success', text: `Success! Published ${slotsToInsert.length} overflow slots to Manager Center.` });
+    const { error: insertError } = await supabase.from('bps_slots').insert(slotsToInsert);
+    
+    if (insertError) {
+      setPublishMessage({ type: 'error', text: `Failed to insert slots: ${insertError.message}` });
+    } else {
+      await fetchSlots(); // Refresh manual list
+      setPublishMessage({ type: 'success', text: `Success! ADDED ${slotsToInsert.length} slots to the dispatch board. They have been persisted.` });
+    }
+    
     setPublishing(false);
     setTimeout(() => setPublishMessage(null), 5000);
+  };
+
+  const handleDeleteSlot = async (id) => {
+    await supabase.from('bps_slots').delete().eq('id', id);
+    fetchSlots();
   };
 
   // --- ROSTER LOGIC ---
@@ -314,6 +334,7 @@ export function AdminPanel() {
         await supabase.from('bps_slots').insert({ patient_identifier: row.patient_identifier, start_time: new Date(row.start_time).toISOString(), status: 'OPEN' });
       }
       setSlotsMessage({ type: 'success', text: `Successfully imported ${validatedData.length} slots` });
+      fetchSlots();
       setTimeout(() => setSlotsMessage(null), 4000);
     } catch (error) { setSlotsMessage({ type: 'error', text: `Error: ${error.message}` }); }
     finally { setLoadingSlots(false); }
@@ -345,7 +366,7 @@ export function AdminPanel() {
             <div className="flex items-center justify-center gap-2"><Users className="w-4 h-4" /> Roster Management</div>
           </button>
           <button onClick={() => setActiveTab('appointments')} className={getTabClass('appointments')}>
-            <div className="flex items-center justify-center gap-2"><CalendarIcon className="w-4 h-4" /> Manual Imports</div>
+            <div className="flex items-center justify-center gap-2"><CalendarIcon className="w-4 h-4" /> Active Slots</div>
           </button>
           <button onClick={() => setActiveTab('security')} className={getTabClass('security')}>
             <div className="flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Passcode Mgt</div>
@@ -360,23 +381,37 @@ export function AdminPanel() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end border-b pb-6 gap-4">
                 <div>
                   <h2 className="text-2xl font-bold text-[#0F172A]">Capacity Circus Planner</h2>
-                  <p className="text-gray-500 text-sm mt-1">Saves automatically. Publishing will clear and replace any open slots currently on the dispatch board for this date.</p>
+                  <p className="text-gray-500 text-sm mt-1">Saves automatically. Publishing *adds* to the live board, it does not delete existing.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Select Date</label>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Calc %</label>
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        min="0"
+                        max="100"
+                        value={calcPercentage}
+                        onChange={handleCalcChange}
+                        className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-[#0F172A] font-bold focus:ring-2 focus:ring-[#5E4791] outline-none"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">%</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Select Date</label>
                     <input 
                       type="date" 
                       value={selectedDate}
                       onChange={(e) => setSelectedDate(e.target.value)}
-                      className="px-4 py-2 border border-gray-300 rounded-lg text-[#0F172A] font-bold focus:ring-2 focus:ring-[#5E4791] outline-none"
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-[#0F172A] font-bold focus:ring-2 focus:ring-[#5E4791] outline-none h-[42px]"
                     />
                   </div>
                   <button 
                     onClick={handlePublishPlan}
                     disabled={publishing}
                     style={{backgroundColor: '#0F172A', color: 'white'}}
-                    className="px-6 py-2 sm:mt-4 rounded-xl font-bold shadow-md hover:opacity-90 disabled:opacity-50 transition-all flex items-center gap-2"
+                    className="px-6 h-[42px] mt-[18px] rounded-xl font-bold shadow-md hover:opacity-90 disabled:opacity-50 transition-all flex items-center gap-2"
                   >
                     {publishing ? <Loader className="w-5 h-5 animate-spin" /> : 'Publish to Live Dispatch'}
                   </button>
@@ -551,22 +586,58 @@ export function AdminPanel() {
             </div>
           )}
 
-          {/* TAB 3: MANUAL UPLOAD OVERRIDE */}
+          {/* TAB 3: ACTIVE SLOTS (Replaces just Manual Upload) */}
           {activeTab === 'appointments' && (
              <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-             <div className="xl:col-span-4">
-               <div className="bg-gray-50/50 rounded-2xl border border-gray-200 p-6">
-                 <h3 className="text-base font-bold text-[#0F172A] mb-4">Manual Override</h3>
-                 <CSVUploadZone onUpload={handleSlotsUpload} title="Drop Slots CSV" description="Requires: patient_identifier, start_time" expectedColumns={['patient_identifier', 'start_time']} />
-                 {slotsMessage && (
-                   <div className={`mt-4 p-4 rounded-xl text-sm font-semibold flex items-center gap-2 ${slotsMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
-                     {slotsMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                     {slotsMessage.text}
-                   </div>
-                 )}
+               <div className="xl:col-span-4">
+                 <div className="bg-gray-50/50 rounded-2xl border border-gray-200 p-6">
+                   <h3 className="text-base font-bold text-[#0F172A] mb-4">Manual Override</h3>
+                   <CSVUploadZone onUpload={handleSlotsUpload} title="Drop Slots CSV" description="Requires: patient_identifier, start_time" expectedColumns={['patient_identifier', 'start_time']} />
+                   {slotsMessage && (
+                     <div className={`mt-4 p-4 rounded-xl text-sm font-semibold flex items-center gap-2 ${slotsMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                       {slotsMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                       {slotsMessage.text}
+                     </div>
+                   )}
+                 </div>
+               </div>
+               
+               <div className="xl:col-span-8 flex flex-col">
+                 <div className="mb-6">
+                   <h3 className="text-lg font-bold text-[#0F172A]">All Active Dispatch Slots</h3>
+                   <p className="text-sm text-gray-500">Manage or delete slots manually. ({slots.length} total)</p>
+                 </div>
+                 
+                 <div className="flex-1 overflow-y-auto pr-2 space-y-2 max-h-[600px]">
+                   {slots.length === 0 ? (
+                     <div className="text-center py-16 px-4 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
+                       <CalendarIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                       <p className="text-gray-500 font-medium">No active slots in the system.</p>
+                     </div>
+                   ) : (
+                     slots.map((slot) => (
+                       <div key={slot.id} className="flex justify-between items-center p-3 bg-white rounded-xl border border-gray-200 hover:shadow-sm transition-all">
+                         <div>
+                           <p className="font-bold text-[#0F172A] text-base">{slot.patient_identifier}</p>
+                           <p className="text-xs font-medium text-gray-500 mt-0.5">
+                             {new Date(slot.start_time).toLocaleString()} 
+                             {slot.host_manager && <span className="text-[#5E4791] ml-2 font-bold">• Host: {slot.host_manager}</span>}
+                           </p>
+                         </div>
+                         <div className="flex items-center gap-4">
+                           <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full ${slot.status === 'OPEN' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                             {slot.status}
+                           </span>
+                           <button onClick={() => handleDeleteSlot(slot.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                             <Trash2 className="w-5 h-5" />
+                           </button>
+                         </div>
+                       </div>
+                     ))
+                   )}
+                 </div>
                </div>
              </div>
-           </div>
           )}
 
           {/* TAB 4: PASSCODE MANAGEMENT */}
@@ -606,49 +677,6 @@ export function AdminPanel() {
 
         </div>
       </div>
-
-      {/* DUPLICATE RESOLVER MODAL */}
-      {showDuplicateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/80 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden">
-            <div style={{backgroundColor:'#5E4791'}} className="p-6 text-white">
-              <h2 className="text-xl font-bold">Resolve Data Conflicts</h2>
-              <p className="text-sm opacity-90 mt-1">{pendingDuplicates.length} duplicates detected. Choose which data to keep.</p>
-            </div>
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="text-left text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200">
-                    <th className="pb-4 px-4">User Email</th>
-                    <th className="pb-4 px-4">Current Data (In Database)</th>
-                    <th className="pb-4 text-center"><ArrowRight className="inline w-4 h-4" /></th>
-                    <th className="pb-4 px-4">Incoming Data (From CSV)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingDuplicates.map((dup, idx) => (
-                    <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
-                      <td className="py-6 px-4 font-bold text-[#0F172A]">{dup.old.email}</td>
-                      <td className="py-6 px-4">
-                        <button onClick={() => resolveDuplicateRow(idx, 'old')} className="w-full text-left p-4 rounded-xl border-2 border-gray-200 hover:border-gray-400 hover:bg-gray-100 transition-all">
-                          <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-1">KEEP EXISTING</div>
-                          <div className="font-semibold text-gray-800">{dup.old.role} <span className="text-gray-400 mx-1">·</span> Tier {dup.old.tier_rank}</div>
-                        </button>
-                      </td>                      <td className="py-6 text-center px-4"><ArrowRight className="text-gray-300 w-5 h-5 inline" /></td>
-                      <td className="py-6 px-4">
-                        <button onClick={() => resolveDuplicateRow(idx, 'new')} className="w-full text-left p-4 rounded-xl border-2 border-purple-200 bg-purple-50/30 hover:border-purple-400 hover:bg-purple-100 transition-all">
-                          <div className="text-[10px] uppercase tracking-widest text-purple-600 font-bold mb-1">USE NEW</div>
-                          <div className="font-semibold text-gray-800">{dup.new.role} <span className="text-gray-400 mx-1">-</span> Tier {dup.new.tier_rank}</div>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
