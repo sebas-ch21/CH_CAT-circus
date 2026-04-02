@@ -2,10 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
 import { CSVUploadZone } from '../components/CSVUploadZone';
-import { 
-  Users, Calendar as CalendarIcon, ShieldCheck, Search, Trash2, 
-  AlertCircle, CheckCircle, Loader, Eye, EyeOff, Plus, X, ArrowRight
-} from 'lucide-react';
+import { Users, Calendar as CalendarIcon, ShieldCheck, Search, Trash2, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Loader, Eye, EyeOff, Plus, X, ArrowRight } from 'lucide-react';
 
 const TIME_INTERVALS = [
   { bps_mt: '07:00 AM', of_mt: '07:15 AM', of_ct: '08:15 AM', val: '07:00', of_val: '07:15' },
@@ -635,6 +632,23 @@ export function AdminPanel() {
                       <td className="py-6 px-4">
                         <button onClick={() => resolveDuplicateRow(idx, 'old')} className="w-full text-left p-4 rounded-xl border-2 border-gray-200 hover:border-gray-400 hover:bg-gray-100 transition-all">
                           <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-1">KEEP EXISTING</div>
-                          <div className="font-semibold text-gray-800">{dup.old.role} <span className="text-gray-400 mx-1">•</span> Tier {dup.old.tier_rank}</div>
+                          <div className="font-semibold text-gray-800">{dup.old.role} <span className="text-gray-400 mx-1">·</span> Tier {dup.old.tier_rank}</div>
+                        </button>
+                      </td>                      <td className="py-6 text-center px-4"><ArrowRight className="text-gray-300 w-5 h-5 inline" /></td>
+                      <td className="py-6 px-4">
+                        <button onClick={() => resolveDuplicateRow(idx, 'new')} className="w-full text-left p-4 rounded-xl border-2 border-purple-200 bg-purple-50/30 hover:border-purple-400 hover:bg-purple-100 transition-all">
+                          <div className="text-[10px] uppercase tracking-widest text-purple-600 font-bold mb-1">USE NEW</div>
+                          <div className="font-semibold text-gray-800">{dup.new.role} <span className="text-gray-400 mx-1">-</span> Tier {dup.new.tier_rank}</div>
                         </button>
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
