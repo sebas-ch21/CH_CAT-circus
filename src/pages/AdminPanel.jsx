@@ -1,108 +1,190 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { CSVUploadZone } from '../components/CSVUploadZone';
 import { TopNav } from '../components/TopNav';
+import { CSVUploadZone } from '../components/CSVUploadZone';
 import { 
-  Users, Calendar, CircleAlert as AlertCircle, CircleCheck as CheckCircle, 
-  Loader, Info, Lock, Eye, EyeOff, Trash2, Search, ArrowRight, Settings, ShieldCheck
+  Users, Calendar as CalendarIcon, ShieldCheck, Search, Trash2, 
+  AlertCircle, CheckCircle, Loader, Eye, EyeOff, Plus, X
 } from 'lucide-react';
 
+const TIME_INTERVALS = [
+  { mt: '07:00 AM', ct: '08:00 AM', val: '07:00' },
+  { mt: '07:30 AM', ct: '08:30 AM', val: '07:30' },
+  { mt: '08:00 AM', ct: '09:00 AM', val: '08:00' },
+  { mt: '08:30 AM', ct: '09:30 AM', val: '08:30' },
+  { mt: '09:00 AM', ct: '10:00 AM', val: '09:00' },
+  { mt: '09:30 AM', ct: '10:30 AM', val: '09:30' },
+  { mt: '10:00 AM', ct: '11:00 AM', val: '10:00' },
+  { mt: '10:30 AM', ct: '11:30 AM', val: '10:30' },
+  { mt: '11:00 AM', ct: '12:00 PM', val: '11:00' },
+  { mt: '11:30 AM', ct: '12:30 PM', val: '11:30' },
+  { mt: '12:00 PM', ct: '01:00 PM', val: '12:00' },
+  { mt: '12:30 PM', ct: '01:30 PM', val: '12:30' },
+  { mt: '01:00 PM', ct: '02:00 PM', val: '13:00' },
+  { mt: '01:30 PM', ct: '02:30 PM', val: '13:30' },
+  { mt: '02:00 PM', ct: '03:00 PM', val: '14:00' },
+  { mt: '02:30 PM', ct: '03:30 PM', val: '14:30' },
+  { mt: '03:00 PM', ct: '04:00 PM', val: '15:00' },
+  { mt: '03:30 PM', ct: '04:30 PM', val: '15:30' },
+  { mt: '04:00 PM', ct: '05:00 PM', val: '16:00' },
+  { mt: '04:30 PM', ct: '05:30 PM', val: '16:30' },
+  { mt: '05:00 PM', ct: '06:00 PM', val: '17:00' },
+];
+
 export function AdminPanel() {
-  const [activeTab, setActiveTab] = useState('roster'); 
-  
-  // Data States
+  // SETTING CIRCUS AS DEFAULT TAB
+  const [activeTab, setActiveTab] = useState('circus'); 
   const [profiles, setProfiles] = useState([]);
-  const [slots, setSlots] = useState([]);
+  const [managers, setManagers] = useState([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
-  // Upload & Loading States
+  // Capacity Circus States
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [planData, setPlanData] = useState({});
+  const [publishing, setPublishing] = useState(false);
+  const [publishMessage, setPublishMessage] = useState(null);
+
+  // Roster States
   const [loadingStaff, setLoadingStaff] = useState(false);
-  const [loadingSlots, setLoadingSlots] = useState(false);
   const [staffMessage, setStaffMessage] = useState(null);
-  const [slotsMessage, setSlotsMessage] = useState(null);
-
-  // Duplicate Handling States
-  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
-  const [pendingDuplicates, setPendingDuplicates] = useState([]);
-  const [resolvedUploadData, setResolvedUploadData] = useState([]);
-
-  // Security PIN States
+  
+  // PIN States
   const [currentAdminPin, setCurrentAdminPin] = useState('charlieadmin');
   const [newAdminPin, setNewAdminPin] = useState('');
   const [showAdminPin, setShowAdminPin] = useState(false);
   const [showNewAdminPin, setShowNewAdminPin] = useState(false);
   const [updatingAdmin, setUpdatingAdmin] = useState(false);
-  const [adminPinMessage, setAdminPinMessage] = useState(null);
-
+  
   const [currentManagerPin, setCurrentManagerPin] = useState('charliemanager');
   const [newManagerPin, setNewManagerPin] = useState('');
   const [showManagerPin, setShowManagerPin] = useState(false);
   const [showNewManagerPin, setShowNewManagerPin] = useState(false);
   const [updatingManager, setUpdatingManager] = useState(false);
-  const [managerPinMessage, setManagerPinMessage] = useState(null);
 
   useEffect(() => {
     fetchProfiles();
-    fetchSlots();
     fetchPins();
   }, []);
 
-  const fetchProfiles = async () => {
-    try {
-      const { data } = await supabase.from('profiles').select('*').order('email');
-      setProfiles(data || []);
-    } catch (error) { console.error('Error fetching profiles:', error); }
-  };
+  useEffect(() => {
+    loadDailyPlan(selectedDate);
+  }, [selectedDate]);
 
-  const fetchSlots = async () => {
-    try {
-      const { data } = await supabase.from('bps_slots').select('*').order('start_time', { ascending: true });
-      setSlots(data || []);
-    } catch (error) { console.error('Error fetching slots:', error); }
+  const fetchProfiles = async () => {
+    const { data } = await supabase.from('profiles').select('*').order('email');
+    if (data) {
+      setProfiles(data);
+      setManagers(data.filter(p => p.role === 'MANAGER' || p.role === 'ADMIN'));
+    }
   };
 
   const fetchPins = async () => {
-    try {
-      const { data, error } = await supabase.from('app_settings').select('*');
-      if (!error && data) {
-        const adminData = data.find(d => d.setting_key === 'admin_pin');
-        const managerData = data.find(d => d.setting_key === 'manager_pin');
-        if (adminData) setCurrentAdminPin(adminData.setting_value);
-        if (managerData) setCurrentManagerPin(managerData.setting_value);
+    const { data } = await supabase.from('app_settings').select('*');
+    if (data) {
+      const a = data.find(d => d.setting_key === 'admin_pin');
+      const m = data.find(d => d.setting_key === 'manager_pin');
+      if (a) setCurrentAdminPin(a.setting_value);
+      if (m) setCurrentManagerPin(m.setting_value);
+    }
+  };
+
+  // --- CAPACITY CIRCUS LOGIC ---
+  const loadDailyPlan = async (dateStr) => {
+    const { data } = await supabase.from('daily_capacity_plans').select('plan_data').eq('plan_date', dateStr).maybeSingle();
+    
+    if (data && data.plan_data) {
+      setPlanData(data.plan_data);
+    } else {
+      const initial = {};
+      TIME_INTERVALS.forEach(int => {
+        initial[int.val] = { attendees: '', suggested: 0, override: '', assignments: [] };
+      });
+      setPlanData(initial);
+    }
+  };
+
+  const updateInterval = (timeVal, field, value) => {
+    setPlanData(prev => {
+      const updated = { ...prev };
+      const row = { ...updated[timeVal] };
+      row[field] = value;
+
+      if (field === 'attendees') {
+        const num = parseInt(value) || 0;
+        row.suggested = num <= 12 ? 0 : Math.ceil(num * 0.3);
       }
-    } catch (error) { console.error('Settings table missing.'); }
+      
+      updated[timeVal] = row;
+      return updated;
+    });
   };
 
-  // --- PIN MANAGEMENT ---
-  const handleUpdatePin = async (role) => {
-    const isAdmin = role === 'ADMIN';
-    const key = isAdmin ? 'admin_pin' : 'manager_pin';
-    const newPin = isAdmin ? newAdminPin : newManagerPin;
-    const setUpdating = isAdmin ? setUpdatingAdmin : setUpdatingManager;
-    const setMessage = isAdmin ? setAdminPinMessage : setManagerPinMessage;
-    const setCurrentPin = isAdmin ? setCurrentAdminPin : setCurrentManagerPin;
-    const setNewPin = isAdmin ? setNewAdminPin : setNewManagerPin;
-
-    if (!newPin || newPin.length < 4) {
-      setMessage({ type: 'error', text: 'PIN must be at least 4 characters' });
-      return;
-    }
-
-    setUpdating(true);
-    try {
-      await supabase.from('app_settings').upsert({ setting_key: key, setting_value: newPin }, { onConflict: 'setting_key' });
-      setCurrentPin(newPin);
-      setNewPin('');
-      setMessage({ type: 'success', text: `${role} PIN updated!` });
-    } catch (error) { setMessage({ type: 'error', text: 'Database error.' }); }
-    finally {
-      setUpdating(false);
-      setTimeout(() => setMessage(null), 4000);
-    }
+  const addManager = (timeVal) => {
+    setPlanData(prev => {
+      const updated = { ...prev };
+      updated[timeVal].assignments.push({ email: '', count: 1 });
+      return updated;
+    });
   };
 
-  // --- ROSTER UPLOAD & DUPLICATES ---
+  const updateManager = (timeVal, idx, field, value) => {
+    setPlanData(prev => {
+      const updated = { ...prev };
+      updated[timeVal].assignments[idx][field] = field === 'count' ? parseInt(value) : value;
+      return updated;
+    });
+  };
+
+  const removeManager = (timeVal, idx) => {
+    setPlanData(prev => {
+      const updated = { ...prev };
+      updated[timeVal].assignments.splice(idx, 1);
+      return updated;
+    });
+  };
+
+  const handlePublishPlan = async () => {
+    setPublishing(true);
+    setPublishMessage(null);
+
+    await supabase.from('daily_capacity_plans').upsert({
+      plan_date: selectedDate,
+      plan_data: planData
+    }, { onConflict: 'plan_date' });
+
+    const startOfDay = new Date(`${selectedDate}T00:00:00Z`).toISOString();
+    const endOfDay = new Date(`${selectedDate}T23:59:59Z`).toISOString();
+    await supabase.from('bps_slots').delete().gte('start_time', startOfDay).lte('start_time', endOfDay).eq('status', 'OPEN');
+
+    const slotsToInsert = [];
+    Object.entries(planData).forEach(([timeVal, row]) => {
+      row.assignments.forEach(assign => {
+        if (assign.email && assign.count > 0) {
+          for (let i = 0; i < assign.count; i++) {
+            const localDateStr = `${selectedDate}T${timeVal}:00`;
+            const dateObj = new Date(localDateStr);
+            slotsToInsert.push({
+              patient_identifier: `OF-${timeVal}-${assign.email.split('@')[0]}-${i+1}`,
+              start_time: dateObj.toISOString(),
+              host_manager: assign.email,
+              status: 'OPEN'
+            });
+          }
+        }
+      });
+    });
+
+    if (slotsToInsert.length > 0) {
+      await supabase.from('bps_slots').insert(slotsToInsert);
+    }
+
+    setPublishMessage({ type: 'success', text: `Published ${slotsToInsert.length} slots to the live dispatch board!` });
+    setPublishing(false);
+    setTimeout(() => setPublishMessage(null), 4000);
+  };
+
+  // --- ROSTER LOGIC ---
   const handleStaffUpload = async (csvData) => {
     setLoadingStaff(true);
     setStaffMessage(null);
@@ -115,86 +197,24 @@ export function AdminPanel() {
     }));
 
     const cleanData = validatedData.filter(d => d.email && ['ADMIN', 'MANAGER', 'IC'].includes(d.role));
-    
     if (cleanData.length === 0) {
       setStaffMessage({ type: 'error', text: 'No valid staff data found.' });
       setLoadingStaff(false);
       return;
     }
 
-    const duplicates = [];
-    const newEntries = [];
-
-    for (const entry of cleanData) {
-      const existing = profiles.find(p => p.email === entry.email);
-      if (existing && (existing.role !== entry.role || existing.tier_rank !== entry.tier_rank)) {
-        duplicates.push({ old: existing, new: entry });
-      } else {
-        newEntries.push(entry);
+    try {
+      for (const row of cleanData) {
+        await supabase.from('profiles').upsert(row, { onConflict: 'email' });
       }
-    }
-
-    if (duplicates.length > 0) {
-      setPendingDuplicates(duplicates);
-      setResolvedUploadData(newEntries);
-      setShowDuplicateModal(true);
-    } else {
-      await commitStaffData(cleanData);
+      await fetchProfiles();
+      setStaffMessage({ type: 'success', text: `Successfully updated ${cleanData.length} staff members` });
+    } catch (error) { 
+      setStaffMessage({ type: 'error', text: `Error: ${error.message}` }); 
     }
     setLoadingStaff(false);
   };
 
-  const commitStaffData = async (data) => {
-    setLoadingStaff(true);
-    try {
-      for (const row of data) {
-        await supabase.from('profiles').upsert(row, { onConflict: 'email' });
-      }
-      await fetchProfiles();
-      setStaffMessage({ type: 'success', text: `Successfully updated ${data.length} staff members` });
-      setTimeout(() => setStaffMessage(null), 4000);
-    } catch (error) { setStaffMessage({ type: 'error', text: `Error: ${error.message}` }); }
-    finally { setLoadingStaff(false); }
-  };
-
-  const resolveDuplicateRow = (index, choice) => {
-    const resolvedRow = choice === 'new' ? pendingDuplicates[index].new : pendingDuplicates[index].old;
-    const updatedResolved = [...resolvedUploadData, resolvedRow];
-    const updatedPending = pendingDuplicates.filter((_, i) => i !== index);
-    setResolvedUploadData(updatedResolved);
-    setPendingDuplicates(updatedPending);
-    if (updatedPending.length === 0) {
-      setShowDuplicateModal(false);
-      commitStaffData(updatedResolved);
-    }
-  };
-
-  // --- APPOINTMENT UPLOAD ---
-  const handleSlotsUpload = async (data) => {
-    setLoadingSlots(true);
-    setSlotsMessage(null);
-    try {
-      const validatedData = data.map((row) => ({
-        patient_identifier: row.patient_identifier?.trim() || row.patient_id?.trim(),
-        start_time: row.start_time?.trim(),
-      }));
-      const errors = validatedData.filter((d) => !d.patient_identifier || !d.start_time);
-      if (errors.length > 0) {
-        setSlotsMessage({ type: 'error', text: `Error: ${errors.length} rows invalid` });
-        setLoadingSlots(false);
-        return;
-      }
-      for (const row of validatedData) {
-        await supabase.from('bps_slots').insert({ patient_identifier: row.patient_identifier, start_time: new Date(row.start_time).toISOString(), status: 'OPEN' });
-      }
-      await fetchSlots();
-      setSlotsMessage({ type: 'success', text: `Successfully imported ${validatedData.length} slots` });
-      setTimeout(() => setSlotsMessage(null), 4000);
-    } catch (error) { setSlotsMessage({ type: 'error', text: `Error: ${error.message}` }); }
-    finally { setLoadingSlots(false); }
-  };
-
-  // --- INLINE EDITING ---
   const handleUpdateProfile = async (id, updates) => {
     await supabase.from('profiles').update(updates).eq('id', id);
     fetchProfiles();
@@ -206,62 +226,175 @@ export function AdminPanel() {
     fetchProfiles();
   };
 
+  const handleUpdatePin = async (role) => {
+    const key = role === 'ADMIN' ? 'admin_pin' : 'manager_pin';
+    const val = role === 'ADMIN' ? newAdminPin : newManagerPin;
+    if(val.length < 4) return;
+    await supabase.from('app_settings').upsert({ setting_key: key, setting_value: val }, { onConflict: 'setting_key' });
+    if(role === 'ADMIN') { setCurrentAdminPin(val); setNewAdminPin(''); }
+    else { setCurrentManagerPin(val); setNewManagerPin(''); }
+  };
+
   const filteredProfiles = profiles.filter(p => p.email.toLowerCase().includes(userSearchTerm.toLowerCase()));
 
-  // Sub-navigation tab helper
   const getTabClass = (id) => `flex-1 py-4 text-center font-bold text-sm transition-all border-b-4 focus:outline-none ${activeTab === id ? 'border-[#0F172A] text-[#0F172A] bg-gray-50' : 'border-transparent text-gray-400 hover:bg-gray-50 hover:text-gray-600'}`;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <TopNav />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8">
         
-        {/* Top Info Banner */}
-        <div className="mb-8 bg-blue-50/50 border border-blue-100 rounded-2xl p-5 flex gap-4 items-start shadow-sm">
-          <div className="p-2 bg-white rounded-full shadow-sm">
-            <Settings className="w-5 h-5 text-blue-600" />
-          </div>
-          <div>
-            <h3 className="font-bold text-blue-900 mb-1">Admin Mode Dashboard</h3>
-            <p className="text-sm text-blue-800/80 leading-relaxed">Use the tabs below to navigate between Roster Management, Appointment Imports, and System Security settings. Data is saved automatically when modified.</p>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
         <div className="flex bg-white rounded-t-2xl border border-gray-200 overflow-hidden shadow-sm">
+          <button onClick={() => setActiveTab('circus')} className={getTabClass('circus')}>
+            <div className="flex items-center justify-center gap-2"><CalendarIcon className="w-4 h-4" /> Capacity Planning</div>
+          </button>
           <button onClick={() => setActiveTab('roster')} className={getTabClass('roster')}>
             <div className="flex items-center justify-center gap-2"><Users className="w-4 h-4" /> Roster Management</div>
           </button>
-          <button onClick={() => setActiveTab('appointments')} className={getTabClass('appointments')}>
-            <div className="flex items-center justify-center gap-2"><Calendar className="w-4 h-4" /> Appointment Slots</div>
-          </button>
           <button onClick={() => setActiveTab('security')} className={getTabClass('security')}>
-            <div className="flex items-center justify-center gap-2"><Lock className="w-4 h-4" /> Passcode Management</div>
+            <div className="flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Passcode Management</div>
           </button>
         </div>
 
-        {/* Tab Content Container */}
-        <div className="bg-white border border-t-0 border-gray-200 rounded-b-2xl p-6 sm:p-8 shadow-sm min-h-[500px]">
+        <div className="bg-white border border-t-0 border-gray-200 rounded-b-2xl p-6 shadow-sm min-h-[500px]">
           
-          {/* --- TAB 1: ROSTER MANAGEMENT --- */}
+          {/* TAB 1: CAPACITY CIRCUS SPREADSHEET */}
+          {activeTab === 'circus' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end border-b pb-6 gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-[#0F172A]">Capacity Circus Planner</h2>
+                  <p className="text-gray-500 text-sm mt-1">Plan overflows based on estimated attendance. Slots are capped at 2 per manager per interval.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Select Date</label>
+                    <input 
+                      type="date" 
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-[#0F172A] font-bold focus:ring-2 focus:ring-[#5E4791] outline-none"
+                    />
+                  </div>
+                  <button 
+                    onClick={handlePublishPlan}
+                    disabled={publishing}
+                    style={{backgroundColor: '#0F172A', color: 'white'}}
+                    className="px-6 py-2 sm:mt-4 rounded-xl font-bold shadow-md hover:opacity-90 disabled:opacity-50 transition-all flex items-center gap-2"
+                  >
+                    {publishing ? <Loader className="w-5 h-5 animate-spin" /> : 'Publish to Live Dispatch'}
+                  </button>
+                </div>
+              </div>
+
+              {publishMessage && (
+                <div className="p-4 bg-green-50 text-green-700 border border-green-200 rounded-xl flex items-center gap-2 font-bold">
+                  <CheckCircle className="w-5 h-5" /> {publishMessage.text}
+                </div>
+              )}
+
+              <div className="overflow-x-auto border border-gray-200 rounded-xl">
+                <table className="w-full text-left border-collapse min-w-[800px]">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="p-4 text-xs font-bold text-[#0F172A] uppercase">Time (MT)</th>
+                      <th className="p-4 text-xs font-bold text-[#0F172A] uppercase">Time (CT)</th>
+                      <th className="p-4 text-xs font-bold text-[#0F172A] uppercase w-32">Est. Attendees</th>
+                      <th className="p-4 text-xs font-bold text-[#5E4791] uppercase w-40">Overflow Needs</th>
+                      <th className="p-4 text-xs font-bold text-[#0F172A] uppercase">Assign Managers (Max 2 slots/mgr)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {TIME_INTERVALS.map((interval) => {
+                      const row = planData[interval.val] || { attendees: '', suggested: 0, override: '', assignments: [] };
+                      const targetOverflow = row.override !== '' ? parseInt(row.override) : row.suggested;
+                      const filledSlots = row.assignments.reduce((sum, a) => sum + (parseInt(a.count)||0), 0);
+                      const isShort = filledSlots < targetOverflow;
+
+                      return (
+                        <tr key={interval.val} className="border-b border-gray-100 hover:bg-gray-50/50">
+                          <td className="p-4 font-semibold text-[#0F172A]">{interval.mt}</td>
+                          <td className="p-4 font-semibold text-gray-500">{interval.ct}</td>
+                          <td className="p-4">
+                            <input 
+                              type="number" min="0" placeholder="0"
+                              value={row.attendees}
+                              onChange={(e) => updateInterval(interval.val, 'attendees', e.target.value)}
+                              className="w-20 px-3 py-1.5 border border-gray-300 rounded-lg text-center font-semibold outline-none focus:border-[#5E4791]"
+                            />
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-400 text-sm font-medium w-14">Calc: {row.suggested}</span>
+                              <input 
+                                type="number" min="0" placeholder="Set"
+                                value={row.override !== '' ? row.override : row.suggested}
+                                onChange={(e) => updateInterval(interval.val, 'override', e.target.value)}
+                                className="w-16 px-2 py-1.5 border-2 border-[#E7DFF3] bg-[#F3EFF9] text-[#5E4791] rounded-lg text-center font-bold outline-none"
+                              />
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <div className="space-y-2">
+                              {row.assignments.map((assign, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                  <select 
+                                    value={assign.email}
+                                    onChange={(e) => updateManager(interval.val, idx, 'email', e.target.value)}
+                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium w-48 focus:ring-1 focus:ring-[#5E4791] outline-none"
+                                  >
+                                    <option value="">Select Manager...</option>
+                                    {managers.map(m => <option key={m.email} value={m.email}>{m.email}</option>)}
+                                  </select>
+                                  <select
+                                    value={assign.count}
+                                    onChange={(e) => updateManager(interval.val, idx, 'count', e.target.value)}
+                                    className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm font-bold w-16 outline-none"
+                                  >
+                                    <option value={1}>1</option>
+                                    <option value={2}>2</option>
+                                  </select>
+                                  <button onClick={() => removeManager(interval.val, idx)} className="text-red-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4" /></button>
+                                </div>
+                              ))}
+                              <div className="flex items-center justify-between mt-2">
+                                <button onClick={() => addManager(interval.val)} className="text-xs font-bold text-[#5E4791] flex items-center gap-1 hover:bg-purple-50 px-2 py-1 rounded transition-colors">
+                                  <Plus className="w-3 h-3" /> Add Manager
+                                </button>
+                                {targetOverflow > 0 && (
+                                  <span className={`text-xs font-bold px-2 py-1 rounded ${isShort ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                                    {filledSlots} / {targetOverflow} Filled
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: ROSTER MANAGEMENT */}
           {activeTab === 'roster' && (
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-              {/* Left Col: Upload */}
               <div className="xl:col-span-4">
                 <div className="bg-gray-50/50 rounded-2xl border border-gray-200 p-6">
                   <h3 className="text-base font-bold text-[#0F172A] mb-4">Import Staff CSV</h3>
                   <CSVUploadZone onUpload={handleStaffUpload} title="Drop Staff Data" description="Requires: email, role, tier_rank" expectedColumns={['email', 'role', 'tier_rank']} />
                   {staffMessage && (
-                    <div className={`mt-4 p-4 rounded-xl text-sm font-semibold flex items-center gap-2 ${staffMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                    <div className={`mt-4 p-4 rounded-xl text-sm font-semibold flex items-center gap-2 ${staffMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                       {staffMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
                       {staffMessage.text}
                     </div>
                   )}
-                  {loadingStaff && <div className="mt-4 flex items-center justify-center gap-2 text-[#5E4791] font-medium p-4 bg-purple-50 rounded-xl"><Loader className="w-4 h-4 animate-spin" /> Processing Data...</div>}
+                  {loadingStaff && <div className="mt-4 flex items-center justify-center gap-2 text-[#5E4791] font-medium p-4 bg-purple-50 rounded-xl"><Loader className="w-4 h-4 animate-spin" /> Processing...</div>}
                 </div>
               </div>
 
-              {/* Right Col: List & Edit */}
               <div className="xl:col-span-8 flex flex-col">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                   <div>
@@ -272,207 +405,81 @@ export function AdminPanel() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input 
                       type="text" placeholder="Search by email..." value={userSearchTerm} onChange={(e) => setUserSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#5E4791] focus:border-transparent outline-none transition-all shadow-sm"
+                      className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#5E4791] outline-none shadow-sm"
                     />
                   </div>
                 </div>
 
-                {/* Table Header */}
-                <div className="hidden sm:grid grid-cols-12 gap-4 px-4 py-3 border-b border-gray-200 mb-2">
-                  <div className="col-span-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Staff Member</div>
-                  <div className="col-span-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest">System Role</div>
-                  <div className="col-span-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Priority Tier</div>
-                  <div className="col-span-1 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Action</div>
+                <div className="flex items-center gap-4 px-4 py-3 border-b border-gray-200 mb-2">
+                  <div className="flex-1 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Staff Member</div>
+                  <div className="w-32 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Role</div>
+                  <div className="w-28 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Tier</div>
+                  <div className="w-20 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Action</div>
                 </div>
 
-                {/* Table Body */}
-                <div className="flex-1 overflow-y-auto pr-2 space-y-3 max-h-[600px]">
-                  {filteredProfiles.length === 0 ? (
-                    <div className="text-center py-16 px-4 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
-                      <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500 font-medium">No team members found.</p>
-                    </div>
-                  ) : (
-                    filteredProfiles.map((p) => (
-                      <div key={p.id} className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:items-center p-4 bg-white rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all group">
-                        
-                        <div className="col-span-5 flex flex-col justify-center">
-                          <div className="font-bold text-[#0F172A] truncate">{p.email}</div>
-                          <div className="text-xs font-medium text-gray-400 mt-0.5 uppercase tracking-wider">Active User</div>
-                        </div>
-
-                        <div className="col-span-3">
-                          <select 
-                            value={p.role} onChange={(e) => handleUpdateProfile(p.id, { role: e.target.value })}
-                            className="w-full bg-gray-50 border border-gray-200 text-gray-700 text-sm font-semibold rounded-lg focus:ring-2 focus:ring-[#5E4791] focus:border-transparent outline-none px-3 py-2 cursor-pointer transition-colors hover:bg-gray-100"
-                          >
-                            <option value="ADMIN">Admin</option>
-                            <option value="MANAGER">Manager</option>
-                            <option value="IC">IC (Staff)</option>
-                          </select>
-                        </div>
-
-                        <div className="col-span-3">
-                          <select 
-                            value={p.tier_rank || 3} onChange={(e) => handleUpdateProfile(p.id, { tier_rank: parseInt(e.target.value) })}
-                            className="w-full bg-gray-50 border border-gray-200 text-gray-700 text-sm font-semibold rounded-lg focus:ring-2 focus:ring-[#5E4791] focus:border-transparent outline-none px-3 py-2 cursor-pointer transition-colors hover:bg-gray-100"
-                          >
-                            <option value="1">Tier 1 (High)</option>
-                            <option value="2">Tier 2 (Med)</option>
-                            <option value="3">Tier 3 (Low)</option>
-                          </select>
-                        </div>
-
-                        <div className="col-span-1 flex justify-end items-center">
-                          {deleteConfirmId === p.id ? (
-                            <div className="flex flex-col gap-1 items-end animate-in fade-in zoom-in duration-200">
-                              <button onClick={() => handleDeleteProfile(p.id)} className="bg-red-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-red-700 whitespace-nowrap shadow-sm transition-colors">Confirm</button>
-                              <button onClick={() => setDeleteConfirmId(null)} className="text-gray-400 text-xs font-bold hover:text-gray-700 transition-colors">Cancel</button>
-                            </div>
-                          ) : (
-                            <button onClick={() => setDeleteConfirmId(p.id)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100">
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          )}
-                        </div>
+                <div className="flex-1 overflow-y-auto pr-2 space-y-2 max-h-[600px]">
+                  {filteredProfiles.map((p) => (
+                    <div key={p.id} className="flex items-center gap-4 p-3 sm:p-4 bg-white rounded-xl border border-gray-200 hover:shadow-sm transition-all group">
+                      <div className="flex-1 min-w-0 font-bold text-sm sm:text-base text-[#0F172A] truncate" title={p.email}>{p.email}</div>
+                      <div className="w-32 flex-shrink-0">
+                        <select value={p.role} onChange={(e) => handleUpdateProfile(p.id, { role: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-lg outline-none px-2 py-1.5 text-sm font-semibold">
+                          <option value="ADMIN">Admin</option>
+                          <option value="MANAGER">Manager</option>
+                          <option value="IC">IC (Staff)</option>
+                        </select>
                       </div>
-                    ))
-                  )}
+                      <div className="w-28 flex-shrink-0">
+                        <select value={p.tier_rank || 3} onChange={(e) => handleUpdateProfile(p.id, { tier_rank: parseInt(e.target.value) })} className="w-full bg-gray-50 border border-gray-200 rounded-lg outline-none px-2 py-1.5 text-sm font-semibold">
+                          <option value="1">Tier 1</option>
+                          <option value="2">Tier 2</option>
+                          <option value="3">Tier 3</option>
+                        </select>
+                      </div>
+                      <div className="w-20 flex-shrink-0 flex justify-end">
+                        {deleteConfirmId === p.id ? (
+                          <div className="flex gap-1 items-center">
+                            <button onClick={() => handleDeleteProfile(p.id)} className="bg-red-600 text-white px-2 py-1.5 rounded text-[10px] font-bold hover:bg-red-700">Yes</button>
+                            <button onClick={() => setDeleteConfirmId(null)} className="text-gray-400 hover:text-gray-600 px-1 py-1.5 rounded"><X className="w-4 h-4" /></button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setDeleteConfirmId(p.id)} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           )}
 
-          {/* --- TAB 2: APPOINTMENT MANAGEMENT --- */}
-          {activeTab === 'appointments' && (
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-              <div className="xl:col-span-4">
-                <div className="bg-gray-50/50 rounded-2xl border border-gray-200 p-6">
-                  <h3 className="text-base font-bold text-[#0F172A] mb-4">Import BPS Slots</h3>
-                  <CSVUploadZone onUpload={handleSlotsUpload} title="Drop Slots CSV" description="Requires: patient_identifier, start_time" expectedColumns={['patient_identifier', 'start_time']} />
-                  {slotsMessage && (
-                    <div className={`mt-4 p-4 rounded-xl text-sm font-semibold flex items-center gap-2 ${slotsMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
-                      {slotsMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                      {slotsMessage.text}
-                    </div>
-                  )}
-                  {loadingSlots && <div className="mt-4 flex items-center justify-center gap-2 text-[#5E4791] font-medium p-4 bg-purple-50 rounded-xl"><Loader className="w-4 h-4 animate-spin" /> Processing Data...</div>}
-                </div>
-              </div>
-              
-              <div className="xl:col-span-8 flex flex-col">
-                <div className="mb-6">
-                  <h3 className="text-lg font-bold text-[#0F172A]">Uploaded Appointment Slots</h3>
-                  <p className="text-sm text-gray-500">{slots.length} Total Slots Available</p>
-                </div>
-                
-                <div className="max-h-[600px] overflow-y-auto space-y-3 pr-2">
-                  {slots.length === 0 ? (
-                    <div className="text-center py-16 px-4 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
-                      <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500 font-medium">No appointments currently loaded.</p>
-                    </div>
-                  ) : (
-                    slots.map((slot) => (
-                      <div key={slot.id} className="flex justify-between items-center p-4 bg-white rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all">
-                        <div>
-                          <p className="font-bold text-[#0F172A] text-lg">{slot.patient_identifier}</p>
-                          <p className="text-sm font-medium text-gray-500 mt-0.5 flex items-center gap-2">
-                            <Calendar className="w-4 h-4" />
-                            {new Date(slot.start_time).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                        <span className={`text-[11px] font-bold uppercase tracking-widest px-4 py-1.5 rounded-full ${slot.status === 'OPEN' ? 'bg-green-100 text-green-800' : slot.status === 'ASSIGNED' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
-                          {slot.status}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* --- TAB 3: PASSCODE MANAGEMENT --- */}
+          {/* TAB 3: PASSCODE MANAGEMENT */}
           {activeTab === 'security' && (
             <div className="max-w-4xl mx-auto py-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Admin PIN */}
                 <div className="bg-gray-50/50 rounded-2xl border border-gray-200 p-8 shadow-sm">
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2.5 bg-white rounded-xl shadow-sm border border-gray-100">
-                      <ShieldCheck className="w-6 h-6 text-[#0F172A]" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-[#0F172A]">Admin PIN</h3>
-                      <p className="text-xs text-gray-500 font-medium mt-0.5">Controls access to this dashboard.</p>
-                    </div>
+                    <ShieldCheck className="w-6 h-6 text-[#0F172A]" />
+                    <h3 className="text-lg font-bold text-[#0F172A]">Admin PIN</h3>
                   </div>
-                  
-                  <div className="space-y-5">
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Current PIN</label>
-                      <div className="relative">
-                        <input type={showAdminPin ? "text" : "password"} value={currentAdminPin} readOnly className="w-full px-4 py-3 bg-gray-100/80 border border-gray-200 rounded-xl text-gray-600 outline-none pr-10 font-mono" />
-                        <button onClick={() => setShowAdminPin(!showAdminPin)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
-                          {showAdminPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="pt-2 border-t border-gray-200">
-                      <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 mt-4">Set New PIN</label>
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <div className="relative flex-1">
-                          <input type={showNewAdminPin ? "text" : "password"} value={newAdminPin} onChange={(e) => setNewAdminPin(e.target.value)} placeholder="Min 4 chars" className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#5E4791] outline-none pr-10 transition-shadow font-mono" />
-                          <button onClick={() => setShowNewAdminPin(!showNewAdminPin)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#5E4791] transition-colors">
-                            {showNewAdminPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                          </button>
-                        </div>
-                        <button onClick={() => handleUpdatePin('ADMIN')} disabled={updatingAdmin || !newAdminPin} style={{backgroundColor:'#0F172A', color:'#fff'}} className="px-6 py-3 rounded-xl font-bold text-sm disabled:opacity-50 transition-opacity shadow-sm whitespace-nowrap">
-                          {updatingAdmin ? <Loader className="w-4 h-4 animate-spin mx-auto" /> : 'Save PIN'}
-                        </button>
-                      </div>
-                      {adminPinMessage && <p className={`text-sm mt-3 font-semibold ${adminPinMessage.type === 'error' ? 'text-red-500' : 'text-green-600'}`}>{adminPinMessage.text}</p>}
+                  <div className="space-y-4">
+                    <input type="password" value={currentAdminPin} readOnly className="w-full px-4 py-3 bg-gray-100/80 border border-gray-200 rounded-xl outline-none font-mono" />
+                    <div className="flex gap-2 mt-4">
+                      <input type="text" value={newAdminPin} onChange={(e) => setNewAdminPin(e.target.value)} placeholder="New PIN" className="flex-1 px-4 py-3 border border-gray-300 rounded-xl outline-none" />
+                      <button onClick={() => handleUpdatePin('ADMIN')} style={{backgroundColor:'#0F172A', color:'white'}} className="px-6 rounded-xl font-bold">Save</button>
                     </div>
                   </div>
                 </div>
 
-                {/* Manager PIN */}
                 <div className="bg-gray-50/50 rounded-2xl border border-gray-200 p-8 shadow-sm">
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2.5 bg-white rounded-xl shadow-sm border border-gray-100">
-                      <Users className="w-6 h-6 text-[#5E4791]" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-[#0F172A]">Manager PIN</h3>
-                      <p className="text-xs text-gray-500 font-medium mt-0.5">Controls access to dispatch view.</p>
-                    </div>
+                    <Users className="w-6 h-6 text-[#5E4791]" />
+                    <h3 className="text-lg font-bold text-[#0F172A]">Manager PIN</h3>
                   </div>
-
-                  <div className="space-y-5">
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Current PIN</label>
-                      <div className="relative">
-                        <input type={showManagerPin ? "text" : "password"} value={currentManagerPin} readOnly className="w-full px-4 py-3 bg-gray-100/80 border border-gray-200 rounded-xl text-gray-600 outline-none pr-10 font-mono" />
-                        <button onClick={() => setShowManagerPin(!showManagerPin)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
-                          {showManagerPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="pt-2 border-t border-gray-200">
-                      <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 mt-4">Set New PIN</label>
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <div className="relative flex-1">
-                          <input type={showNewManagerPin ? "text" : "password"} value={newManagerPin} onChange={(e) => setNewManagerPin(e.target.value)} placeholder="Min 4 chars" className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#5E4791] outline-none pr-10 transition-shadow font-mono" />
-                          <button onClick={() => setShowNewManagerPin(!showNewManagerPin)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#5E4791] transition-colors">
-                            {showNewManagerPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                          </button>
-                        </div>
-                        <button onClick={() => handleUpdatePin('MANAGER')} disabled={updatingManager || !newManagerPin} style={{backgroundColor:'#5E4791', color:'#fff'}} className="px-6 py-3 rounded-xl font-bold text-sm disabled:opacity-50 transition-opacity shadow-sm whitespace-nowrap">
-                          {updatingManager ? <Loader className="w-4 h-4 animate-spin mx-auto" /> : 'Save PIN'}
-                        </button>
-                      </div>
-                      {managerPinMessage && <p className={`text-sm mt-3 font-semibold ${managerPinMessage.type === 'error' ? 'text-red-500' : 'text-green-600'}`}>{managerPinMessage.text}</p>}
+                  <div className="space-y-4">
+                    <input type="password" value={currentManagerPin} readOnly className="w-full px-4 py-3 bg-gray-100/80 border border-gray-200 rounded-xl outline-none font-mono" />
+                    <div className="flex gap-2 mt-4">
+                      <input type="text" value={newManagerPin} onChange={(e) => setNewManagerPin(e.target.value)} placeholder="New PIN" className="flex-1 px-4 py-3 border border-gray-300 rounded-xl outline-none" />
+                      <button onClick={() => handleUpdatePin('MANAGER')} style={{backgroundColor:'#5E4791', color:'white'}} className="px-6 rounded-xl font-bold">Save</button>
                     </div>
                   </div>
                 </div>
@@ -482,50 +489,6 @@ export function AdminPanel() {
 
         </div>
       </div>
-
-      {/* --- DUPLICATE RESOLVER MODAL --- */}
-      {showDuplicateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/80 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden">
-            <div style={{backgroundColor:'#5E4791'}} className="p-6 text-white">
-              <h2 className="text-xl font-bold">Resolve Data Conflicts</h2>
-              <p className="text-sm opacity-90 mt-1">{pendingDuplicates.length} duplicates detected. Choose which data to keep.</p>
-            </div>
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="text-left text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200">
-                    <th className="pb-4 px-4">User Email</th>
-                    <th className="pb-4 px-4">Current Data (In Database)</th>
-                    <th className="pb-4 text-center"><ArrowRight className="inline w-4 h-4" /></th>
-                    <th className="pb-4 px-4">Incoming Data (From CSV)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingDuplicates.map((dup, idx) => (
-                    <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
-                      <td className="py-6 px-4 font-bold text-[#0F172A]">{dup.old.email}</td>
-                      <td className="py-6 px-4">
-                        <button onClick={() => resolveDuplicateRow(idx, 'old')} className="w-full text-left p-4 rounded-xl border-2 border-gray-200 hover:border-gray-400 hover:bg-gray-100 transition-all">
-                          <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-1">KEEP EXISTING</div>
-                          <div className="font-semibold text-gray-800">{dup.old.role} <span className="text-gray-400 mx-1">•</span> Tier {dup.old.tier_rank}</div>
-                        </button>
-                      </td>
-                      <td className="text-center text-gray-300 font-bold">VS</td>
-                      <td className="py-6 px-4">
-                        <button onClick={() => resolveDuplicateRow(idx, 'new')} className="w-full text-left p-4 rounded-xl border-2 border-[#E7DFF3] bg-[#F3EFF9] hover:border-[#5E4791] hover:bg-purple-50 transition-all">
-                          <div className="text-[10px] uppercase tracking-widest text-[#5E4791] font-bold mb-1">OVERWRITE WITH NEW</div>
-                          <div className="font-semibold text-[#0F172A]">{dup.new.role} <span className="text-gray-400 mx-1">•</span> Tier {dup.new.tier_rank}</div>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
