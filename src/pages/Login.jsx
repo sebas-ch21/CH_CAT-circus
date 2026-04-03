@@ -46,9 +46,9 @@ export function Login() {
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-3 mb-6">
             <Shield className="w-10 h-10 text-[#0F172A]" strokeWidth={2.5} />
-            <h1 className="text-3xl font-semibold text-[#0F172A]">Charlie Admissions</h1>
+            <h1 className="text-3xl font-semibold text-[#0F172A]">CH Clinical Admissions Overflow</h1>
           </div>
-          <p className="text-gray-600">Welcome back to the dispatcher system</p>
+          <p className="text-gray-600">Welcome back to the dispatch system</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
