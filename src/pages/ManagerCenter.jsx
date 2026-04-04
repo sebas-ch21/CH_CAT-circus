@@ -467,4 +467,29 @@ export function ManagerCenter() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Overflow Time</span>
-                  <span className="font-black text-[#5E4791] text-
+                  <span className="font-black text-[#5E4791] text-lg bg-purple-50 px-3 py-1 rounded-lg">{getDualTimes(selectedSlot.start_time).of}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><LinkIcon className="w-3 h-3"/> Zoom Link (Required for IC)</label>
+                <input 
+                  type="text" placeholder="Paste Zoom link here..." 
+                  value={zoomLinkInput} onChange={(e) => setZoomLinkInput(e.target.value)}
+                  className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl font-medium focus:border-[#5E4791] focus:ring-0 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="p-6 flex gap-3 bg-gray-50 border-t border-gray-100">
+              <button onClick={() => setShowConfirmModal(false)} disabled={dispatching} className="flex-1 py-4 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-100 transition-colors">Cancel</button>
+              <button onClick={executeDispatch} disabled={dispatching} style={{ backgroundColor: '#0F172A', color: '#ffffff' }} className="flex-1 py-4 rounded-xl font-black shadow-lg hover:opacity-90 transition-opacity flex justify-center items-center gap-2">
+                {dispatching ? <><Loader className="w-5 h-5 animate-spin"/> Routing...</> : 'Route IC Now'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
