@@ -1,99 +1,99 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Shield, CircleAlert as AlertCircle, Loader } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Shield, Loader, MailCheck, KeyRound } from 'lucide-react';
 
 export function Login() {
   const [email, setEmail] = useState('');
+  const [pin, setPin] = useState('');
+  const [usePin, setUsePin] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
-  const navigate = useNavigate();
-
-  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const [success, setSuccess] = useState(false);
+  const { loginWithMagicLink, loginWithPin } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Hardcoded custom error message
-    const customError = "User not in system, reach out to Clinical Admissions Leadership";
-
-    // If email format is bad, immediately show the error and stop
-    if (!isValidEmail) {
-      setError(customError);
-      return;
-    }
-    
     setError('');
     setLoading(true);
 
-    const result = await login(email);
-    if (result.success) {
-      const user = result.user;
-      if (user.role === 'ADMIN') navigate('/admin');
-      else if (user.role === 'MANAGER') navigate('/manager');
-      else if (user.role === 'IC') navigate('/dashboard');
-    } else {
-      // If Supabase says the user doesn't exist, show our custom error
-      setError(customError);
+    try {
+      if (usePin) {
+        // Test User Flow
+        await loginWithPin(email, pin);
+      } else {
+        // Magic Link Flow
+        await loginWithMagicLink(email);
+        setSuccess(true);
+      }
+    } catch (err) {
+      setError(err.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-3 mb-6">
-            <Shield className="w-10 h-10 text-[#0F172A]" strokeWidth={2.5} />
-            <h1 className="text-3xl font-semibold text-[#0F172A]">CH Clinical Admissions Overflow</h1>
-          </div>
-          <p className="text-gray-600">Welcome back to the dispatch system</p>
-        </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-6">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+        <Shield className="w-16 h-16 text-[#0F172A] mx-auto mb-6" strokeWidth={2.5} />
+        <h2 className="text-3xl font-black text-gray-900 tracking-tight">Charlie Admissions</h2>
+      </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your.email@clinic.com"
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#0F172A] focus:border-transparent outline-none transition"
-                disabled={loading}
-              />
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-8 shadow-2xl rounded-3xl border border-gray-100">
+          {success ? (
+            <div className="text-center p-6 bg-green-50 rounded-xl border border-green-100 animate-in zoom-in duration-300">
+              <MailCheck className="w-12 h-12 text-green-500 mx-auto mb-4" />
+              <h3 className="text-lg font-bold text-green-900 mb-2">Check your email</h3>
+              <p className="text-sm text-green-700 font-medium">
+                We've sent a magic login link to <strong>{email}</strong>.
+              </p>
+              <button onClick={() => setSuccess(false)} className="mt-6 text-sm font-bold text-[#5E4791] hover:underline">
+                Try a different email
+              </button>
             </div>
-
-            {error && (
-              <div className="flex gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700 font-medium">{error}</p>
+          ) : (
+            <form className="space-y-6" onSubmit={handleSubmit}>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Email Address</label>
+                <input
+                  type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-medium focus:border-[#5E4791] outline-none transition-colors"
+                  placeholder="name@clinic.com"
+                />
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              style={{ backgroundColor: '#5E4791', color: '#ffffff' }}
-              className="w-full font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-md hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <><Loader className="w-5 h-5 animate-spin" /> Signing In...</>
-              ) : (
-                'Sign In'
+              {usePin && (
+                <div className="animate-in slide-in-from-top-2 duration-200">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Test PIN</label>
+                  <input
+                    type="password" required={usePin} value={pin} onChange={(e) => setPin(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-medium focus:border-[#5E4791] outline-none transition-colors"
+                    placeholder="Enter PIN (IC users leave blank)"
+                  />
+                </div>
               )}
-            </button>
-          </form>
 
-          <div className="mt-6">
-            <p className="text-xs text-gray-500 text-center leading-relaxed">
-              Demo users: admin@clinic.com, manager@clinic.com, ic1@clinic.com
-            </p>
-          </div>
+              {error && <div className="p-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl text-center border border-red-100">{error}</div>}
+
+              <button
+                type="submit" disabled={loading}
+                className="w-full py-4 rounded-xl font-black text-white bg-[#0F172A] hover:bg-gray-800 transition-all shadow-lg flex justify-center items-center gap-2"
+              >
+                {loading ? <Loader className="w-5 h-5 animate-spin" /> : (usePin ? 'Login with PIN' : 'Send Magic Link')}
+              </button>
+            </form>
+          )}
+
+          {!success && (
+            <button 
+              onClick={() => setUsePin(!usePin)} 
+              type="button"
+              className="mt-6 w-full text-center text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors flex items-center justify-center gap-2"
+            >
+              <KeyRound className="w-4 h-4" /> {usePin ? 'Switch to Magic Link' : 'Test User? Login with PIN'}
+            </button>
+          )}
         </div>
       </div>
     </div>
