@@ -43,7 +43,7 @@ describe('Manager Center Tests', () => {
     renderManagerCenter();
     await waitFor(() => {
       expect(screen.getByText(/Waiting Queue/i)).toBeInTheDocument();
-      expect(screen.getByText(/Execute Match/i)).toBeInTheDocument();
+      expect(screen.getByText(/Match & Dispatch/i)).toBeInTheDocument();
     });
   });
 
