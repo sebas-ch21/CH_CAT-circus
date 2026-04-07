@@ -1,33 +1,44 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Loader } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useEffect } from 'react';
 
-export function ProtectedRoute({ children, allowedRoles }) {
+export function ProtectedRoute({ children, requiredRole }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
-  // 1. Show a loading spinner while Supabase checks the session
+  // Fire a toast notification if the user hits a route they don't have access to
+  useEffect(() => {
+    if (!loading && user && requiredRole) {
+      if (requiredRole === 'ADMIN' && user.role !== 'ADMIN') {
+        toast.error('Unauthorized: Admin access required.');
+      } else if (requiredRole === 'MANAGER' && !['ADMIN', 'MANAGER'].includes(user.role)) {
+        toast.error('Unauthorized: Manager access required.');
+      }
+    }
+  }, [user, loading, requiredRole, location.pathname]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader className="w-12 h-12 animate-spin text-[#5E4791]" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-[#5E4791] border-t-transparent shadow-sm"></div>
       </div>
     );
   }
 
-  // 2. If no user is found, kick them to the login screen
-  if (!user) {
-    return <Navigate to="/" state={{ from: location }} replace />;
-  }
+  // Not logged in? Send back to login door.
+  if (!user) return <Navigate to="/" replace />;
 
-  // 3. If they are logged in, but their role is NOT in the allowedRoles array
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    // Send them back to their appropriate home page
-    if (user.role === 'ADMIN') return <Navigate to="/admin" replace />;
-    if (user.role === 'MANAGER') return <Navigate to="/manager" replace />;
+  // Enforce Admin strict access
+  if (requiredRole === 'ADMIN' && user.role !== 'ADMIN') {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // 4. Everything checks out, let them in!
+  // Enforce Manager strict access (Admins inherit manager access)
+  if (requiredRole === 'MANAGER' && !['ADMIN', 'MANAGER'].includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // If all checks pass, render the protected component
   return children;
 }
