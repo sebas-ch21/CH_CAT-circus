@@ -19,9 +19,10 @@ export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, 
       
       toast.success('Assignment Revoked. IC returned to queue.');
       if (onDataChange) onDataChange();
-    } catch (error) {
-      toast.error('Failed to cancel assignment.');
-      console.error(error);
+    } catch (err) {
+      const msg = err?.message || err?.details || 'Failed to cancel assignment.';
+      toast.error(msg);
+      console.error('Cancel RPC error:', err);
     } finally {
       setProcessingId(null);
     }

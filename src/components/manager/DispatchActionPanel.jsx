@@ -31,9 +31,10 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
       
       // Force UI sync
       if (onDispatchComplete) onDispatchComplete();
-    } catch (error) {
-      toast.error('Dispatch failed.');
-      console.error(error);
+    } catch (err) {
+      const msg = err?.message || err?.details || 'Dispatch failed. Try again.';
+      toast.error(msg);
+      console.error('Dispatch RPC error:', err);
     } finally {
       setDispatching(false);
     }

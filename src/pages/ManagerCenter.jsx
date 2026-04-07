@@ -110,10 +110,10 @@ export function ManagerCenter() {
     toast.success('Schedule saved');
   };
 
-  const handleDispatchComplete = () => {
+  const handleDispatchComplete = async () => {
     setSelectedIC(null);
     setSelectedSlot(null);
-    fetchData();
+    await fetchData();
   };
 
   const getTabClass = (id) =>
