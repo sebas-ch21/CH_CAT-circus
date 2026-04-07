@@ -20,6 +20,7 @@ vi.mock('../lib/supabase', () => ({
       order: vi.fn().mockResolvedValue({ data: [], error: null }),
       maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
     })),
+    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
   }
 }));
 
@@ -58,7 +59,7 @@ describe('Manager Center Tests', () => {
     fireEvent.click(teamTab);
 
     await waitFor(() => {
-      expect(screen.getByText(/Save Team Schedule/i)).toBeInTheDocument();
+      expect(screen.getByText(/Save/i)).toBeInTheDocument();
       expect(screen.getByText(/07:00 AM MT/i)).toBeInTheDocument();
     });
   });

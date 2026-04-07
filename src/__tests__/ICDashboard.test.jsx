@@ -15,24 +15,19 @@ vi.mock('../lib/supabase', () => {
     const chain = {
       select: vi.fn(() => chain),
       eq: vi.fn(() => chain),
+      in: vi.fn(() => chain),
       limit: vi.fn(() => chain),
-      insert: vi.fn(async () => {
-        mockState.queueData = [{ id: 'queue-1', ic_id: '123', entered_at: new Date().toISOString() }];
-        return { error: null };
-      }),
-      delete: vi.fn(async () => {
-        mockState.queueData = [];
-        return { error: null };
-      }),
+      insert: vi.fn(async () => ({ error: null })),
+      delete: vi.fn(async () => ({ error: null })),
       update: vi.fn(() => chain),
+      maybeSingle: vi.fn(async () => {
+        if (table === 'profiles') return { data: mockState.profileData[0], error: null };
+        return { data: null, error: null };
+      }),
       then: vi.fn(async (resolve) => {
-        if (table === 'queue_entries') {
-          return resolve({ data: mockState.queueData, error: null });
-        } else if (table === 'bps_slots') {
-          return resolve({ data: mockState.slotData, error: null });
-        } else if (table === 'profiles') {
-          return resolve({ data: mockState.profileData, error: null });
-        }
+        if (table === 'queue_entries') return resolve({ data: mockState.queueData, error: null });
+        if (table === 'bps_slots') return resolve({ data: mockState.slotData, error: null });
+        if (table === 'profiles') return resolve({ data: mockState.profileData, error: null });
         return resolve({ data: [], error: null });
       })
     };
@@ -42,14 +37,7 @@ vi.mock('../lib/supabase', () => {
   return {
     supabase: {
       from: mockFrom,
-      channel: vi.fn(() => {
-        const ch = {
-          on: vi.fn(() => ch),
-          subscribe: vi.fn(() => ch),
-          unsubscribe: vi.fn(),
-        };
-        return ch;
-      }),
+      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     }
   };
 });
