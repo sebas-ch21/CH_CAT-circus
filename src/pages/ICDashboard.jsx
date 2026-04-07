@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
 import { CircleCheck as CheckCircle2, Loader, Info, XCircle, Video, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 
 export function ICDashboard() {
   const { user } = useAuth();
@@ -10,22 +11,57 @@ export function ICDashboard() {
   const [inQueue, setInQueue] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes in seconds
+  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes 
   const [profileTier, setProfileTier] = useState(3);
 
+  const checkStatus = useCallback(async () => {
+    if (!user?.id || loading || confirming) return; 
+    try {
+      // 1. SELF-HEALING ARCHITECTURE: ALWAYS check for active assignment first
+      const { data: slotData, error: slotError } = await supabase.from('bps_slots')
+        .select('*')
+        .eq('assigned_ic_id', user.id)
+        .in('status', ['ASSIGNED', 'CONFIRMED'])
+        .limit(1);
+      
+      if (slotError) console.error("Slot fetch error:", slotError);
+      
+      const activeAssignment = slotData?.[0] || null;
+      setAssignment(activeAssignment);
+
+      if (activeAssignment) {
+        // We found a match! Forcefully erase the queue state locally & remotely
+        setInQueue(false);
+        await supabase.from('queue_entries').delete().eq('ic_id', user.id);
+        await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', user.id);
+      } else {
+        // 2. ONLY check queue if we have NO assignment
+        const { data: queueData } = await supabase.from('queue_entries').select('*').eq('ic_id', user.id).limit(1);
+        setInQueue(queueData && queueData.length > 0);
+      }
+
+      // Update analytics tier tracking
+      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).limit(1);
+      if (profileData?.[0]) setProfileTier(profileData[0].tier_rank);
+    } catch (error) {
+      console.error('Error checking status:', error);
+    }
+  }, [user?.id, loading, confirming]);
+
+  // Fast Polling to prevent Race Conditions
   useEffect(() => {
     checkStatus();
-    const interval = setInterval(checkStatus, 3000);
+    const interval = setInterval(checkStatus, 3000); 
     return () => clearInterval(interval);
-  }, []);
+  }, [checkStatus]);
 
-  // 30-Minute Countdown Timer
+  // 5-Minute Countdown Timer
   useEffect(() => {
-    if (assignment && assignment.status === 'ASSIGNED' && assignment.assigned_at) {
+    if (assignment?.status === 'ASSIGNED' && assignment.assigned_at) {
       const timer = setInterval(() => {
         const assignedTime = new Date(assignment.assigned_at).getTime();
         const now = new Date().getTime();
-        const diffInSeconds = Math.floor((1800000 - (now - assignedTime)) / 1000); // 30 mins
+        const diffInSeconds = Math.floor((300000 - (now - assignedTime)) / 1000); // 5 mins
         if (diffInSeconds <= 0) {
           setAssignment(null);
           setTimeLeft(0);
@@ -37,75 +73,21 @@ export function ICDashboard() {
     }
   }, [assignment]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    const channel = supabase
-      .channel(`bps_slots_${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bps_slots', filter: `assigned_ic_id=eq.${user.id}` }, () => checkStatus())
-      .subscribe();
-    return () => channel.unsubscribe();
-  }, [user]);
-
-  const checkStatus = async () => {
-    if (!user?.id || loading || confirming) return; 
-    try {
-      // 1. SELF-HEALING ARCHITECTURE: ALWAYS check for an active assignment FIRST
-      const { data: slotData } = await supabase.from('bps_slots')
-        .select('*')
-        .eq('assigned_ic_id', user.id)
-        .in('status', ['ASSIGNED', 'CONFIRMED'])
-        .limit(1);
-      
-      const activeAssignment = slotData?.[0] || null;
-      setAssignment(activeAssignment);
-
-      // 2. If assignment exists, forcefully override the queue UI and delete DB queue row.
-      if (activeAssignment) {
-        setInQueue(false);
-        await supabase.from('queue_entries').delete().eq('ic_id', user.id);
-      } else {
-        // 3. Only check the queue if they DON'T have an active assignment
-        const { data: queueData } = await supabase.from('queue_entries').select('*').eq('ic_id', user.id).limit(1);
-        setInQueue(queueData && queueData.length > 0);
-      }
-
-      // Update profile tier for statistics logging
-      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).limit(1);
-      if (profileData?.[0]) setProfileTier(profileData[0].tier_rank);
-
-    } catch (error) {
-      console.error('Error checking status:', error);
-    }
-  };
-
   const handleEnterQueue = async () => {
-    if (loading) return;
-    setLoading(true);
-    setInQueue(true); 
-    setAssignment(null);
+    setLoading(true); setInQueue(true); setAssignment(null);
     try {
       await supabase.from('queue_entries').delete().eq('ic_id', user.id);
       await supabase.from('queue_entries').insert([{ ic_id: user.id, entered_at: new Date().toISOString() }]);
       await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', user.id);
-    } catch (error) {
-      setInQueue(false); 
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { setInQueue(false); toast.error('Failed to enter queue'); } finally { setLoading(false); }
   };
 
   const handleExitQueue = async () => {
-    if (loading) return;
-    setLoading(true);
-    setInQueue(false); 
+    setLoading(true); setInQueue(false); 
     try {
       await supabase.from('queue_entries').delete().eq('ic_id', user.id);
       await supabase.from('profiles').update({ current_status: 'AVAILABLE' }).eq('id', user.id);
-    } catch (error) {
-      setInQueue(true); 
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { setInQueue(true); } finally { setLoading(false); }
   };
 
   const handleConfirmReceipt = async () => {
@@ -114,33 +96,23 @@ export function ICDashboard() {
     try {
       // Log for statistics
       await supabase.from('dispatch_logs').insert([{
-        ic_id: user.id,
-        ic_email: user.email,
-        tier_rank: profileTier,
+        ic_id: user.id, ic_email: user.email, tier_rank: profileTier,
         manager_email: assignment.host_manager || 'Unknown',
-        patient_identifier: assignment.patient_identifier,
-        start_time: assignment.start_time
+        patient_identifier: assignment.patient_identifier, start_time: assignment.start_time
       }]);
 
       await supabase.from('bps_slots').update({ status: 'CONFIRMED' }).eq('id', assignment.id);
-      await supabase.from('queue_entries').delete().eq('ic_id', user.id);
-      await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', user.id);
-      
+      toast.success('Match Confirmed!');
       await checkStatus();
-    } catch (error) {
-      console.error('Error confirming receipt:', error);
-    } finally {
-      setConfirming(false);
-    }
+    } catch (error) { toast.error('Failed to confirm match.'); } finally { setConfirming(false); }
   };
 
   const formatMinutes = (seconds) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
+    const m = Math.floor(seconds / 60); const s = seconds % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // UI Flow: Priority is Assignment > Queue > Idle
+  // UI HIERARCHY: Assignment > Confirmed > Queue > Idle
 
   if (assignment && assignment.status === 'ASSIGNED') {
     return (
@@ -154,14 +126,8 @@ export function ICDashboard() {
               </div>
               <p className="font-bold text-green-900 text-xl mt-4 mb-6">New Assignment Ready!</p>
               <div className="space-y-4">
-                <div>
-                  <p className="text-xs text-green-700 font-bold uppercase tracking-widest mb-1">Room ID</p>
-                  <p className="text-2xl font-black text-green-900">{assignment.patient_identifier}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-green-700 font-bold uppercase tracking-widest mb-1">Meeting Time</p>
-                  <p className="text-lg font-bold text-green-900">{new Date(assignment.start_time).toLocaleString()}</p>
-                </div>
+                <div><p className="text-xs text-green-700 font-bold uppercase tracking-widest mb-1">Room ID</p><p className="text-2xl font-black text-green-900">{assignment.patient_identifier}</p></div>
+                <div><p className="text-xs text-green-700 font-bold uppercase tracking-widest mb-1">Meeting Time</p><p className="text-lg font-bold text-green-900">{new Date(assignment.start_time).toLocaleString()}</p></div>
               </div>
             </div>
             <button onClick={handleConfirmReceipt} disabled={confirming || timeLeft <= 0} className="w-full bg-[#059669] hover:bg-[#047857] text-white font-bold py-6 px-6 rounded-2xl text-xl transition-all flex items-center justify-center gap-3 shadow-lg">
@@ -179,9 +145,7 @@ export function ICDashboard() {
         <TopNav />
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="w-full max-w-sm space-y-6 text-center animate-in fade-in duration-300">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-2">
-              <Video className="w-8 h-8 text-blue-600" />
-            </div>
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-2"><Video className="w-8 h-8 text-blue-600" /></div>
             <h1 className="text-2xl font-bold text-gray-900 mb-6">Confirmed Match</h1>
             <div className="space-y-4 text-left">
               <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
@@ -190,13 +154,7 @@ export function ICDashboard() {
               </div>
               <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
                 <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-1">Zoom Link</p>
-                {assignment.zoom_link ? (
-                  <a href={assignment.zoom_link} target="_blank" rel="noreferrer" className="text-blue-600 font-bold hover:underline break-all">
-                    {assignment.zoom_link}
-                  </a>
-                ) : (
-                  <p className="text-gray-500 italic font-medium">Manager did not provide a link.</p>
-                )}
+                {assignment.zoom_link ? <a href={assignment.zoom_link} target="_blank" rel="noreferrer" className="text-blue-600 font-bold hover:underline break-all">{assignment.zoom_link}</a> : <p className="text-gray-500 italic font-medium">Manager did not provide a link.</p>}
               </div>
             </div>
             <button onClick={handleEnterQueue} disabled={loading} className="mt-8 w-full bg-[#A890D3] hover:bg-[#8B6FC4] text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all shadow-lg">
@@ -233,10 +191,7 @@ export function ICDashboard() {
         <div className="w-full max-w-sm space-y-6 animate-in slide-in-from-bottom-4 duration-500">
           <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl p-5 flex gap-3">
             <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <h3 className="font-bold text-blue-900 mb-1">IC Mode Instructions</h3>
-              <p className="text-sm text-blue-800 font-medium">Click below to enter the reassignment queue when your patient doesn't show up.</p>
-            </div>
+            <div><h3 className="font-bold text-blue-900 mb-1">IC Mode Instructions</h3><p className="text-sm text-blue-800 font-medium">Click below to enter the reassignment queue when your patient doesn't show up.</p></div>
           </div>
           <button onClick={handleEnterQueue} disabled={loading} className="w-full bg-[#0F172A] hover:bg-gray-800 text-white font-bold py-10 px-6 rounded-3xl text-xl transition-all shadow-2xl min-h-[160px]">
             {loading ? <><Loader className="w-8 h-8 animate-spin mx-auto mb-2" /> Entering...</> : 'Enter Reassignment Queue'}
