@@ -14,7 +14,8 @@ export function Login() {
   const { user, loginWithMagicLink, loginWithPin } = useAuth();
   const navigate = useNavigate();
 
-  // THE FIX: Listen for a successful login and instantly route them away from the login page!
+  // FIX: Redirection Logic
+  // As soon as 'user' becomes populated (login successful), route them to the dashboard!
   useEffect(() => {
     if (user) {
       if (user.role === 'ADMIN') navigate('/admin');
@@ -30,8 +31,10 @@ export function Login() {
 
     try {
       if (usePin) {
+        // Call the new, working loginWithPin function from the Context
         await loginWithPin(email, pin);
       } else {
+        // Call the new, working loginWithMagicLink function from the Context
         await loginWithMagicLink(email);
         setSuccess(true);
       }
