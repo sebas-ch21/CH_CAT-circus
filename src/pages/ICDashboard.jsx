@@ -49,20 +49,28 @@ export function ICDashboard() {
   const checkStatus = async () => {
     if (!user?.id || loading || confirming) return; 
     try {
-      const { data: queueData } = await supabase.from('queue_entries').select('*').eq('ic_id', user.id).limit(1);
-      const isCurrentlyInQueue = queueData && queueData.length > 0;
-      setInQueue(isCurrentlyInQueue);
+      // 1. ALWAYS check for an active assignment FIRST
+      const { data: slotData } = await supabase.from('bps_slots')
+        .select('*')
+        .eq('assigned_ic_id', user.id)
+        .in('status', ['ASSIGNED', 'CONFIRMED'])
+        .limit(1);
+      
+      const activeAssignment = slotData?.[0] || null;
+      setAssignment(activeAssignment);
 
-      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).limit(1);
-      const currentProfile = profileData?.[0];
-      if (currentProfile) setProfileTier(currentProfile.tier_rank);
-
-      if (!isCurrentlyInQueue) {
-        const { data: slotData } = await supabase.from('bps_slots').select('*').eq('assigned_ic_id', user.id).limit(1);
-        setAssignment(slotData?.[0] || null);
+      // 2. Only check the queue if they DON'T have an active assignment
+      if (!activeAssignment) {
+        const { data: queueData } = await supabase.from('queue_entries').select('*').eq('ic_id', user.id).limit(1);
+        setInQueue(queueData && queueData.length > 0);
       } else {
-        setAssignment(null);
+        setInQueue(false); // Force queue to false if they have a match
       }
+
+      // 3. Update profile tier for statistics logging
+      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).limit(1);
+      if (profileData?.[0]) setProfileTier(profileData[0].tier_rank);
+
     } catch (error) {
       console.error('Error checking status:', error);
     }
