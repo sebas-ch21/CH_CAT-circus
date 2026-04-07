@@ -17,8 +17,7 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
     if (!selectedIC || !selectedSlot) return;
     setDispatching(true);
     try {
-      // THE FIX: One single atomic call to the Database RPC. 
-      // This bypasses RLS and guarantees the slot, profile, and queue all update together perfectly.
+      // ONE ATOMIC CALL: The database handles the slot, the profile, and the queue simultaneously.
       const { error } = await supabase.rpc('manager_dispatch_ic', {
         p_slot_id: selectedSlot.id,
         p_ic_id: selectedIC.ic_id,
@@ -29,8 +28,6 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
 
       toast.success('Dispatched! Awaiting IC Confirmation.');
       setShowConfirmModal(false);
-      
-      // Force UI sync
       if (onDispatchComplete) onDispatchComplete();
     } catch (error) {
       toast.error('Dispatch failed.');
