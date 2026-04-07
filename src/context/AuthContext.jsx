@@ -12,10 +12,10 @@ export function AuthProvider({ children }) {
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
-        // Real Supabase session exists, verify them
+        // If a real Magic Link session exists, verify them against the roster
         await verifyAgainstRoster(session.user.email, session.user);
       } else {
-        // No real session, check for PIN-based test user before wiping state
+        // If no real session exists, check if they are a test user before wiping state
         const testUser = localStorage.getItem('charlie_test_user');
         if (!testUser) {
           setUser(null);
@@ -110,7 +110,7 @@ export function AuthProvider({ children }) {
       // 4. Verification successful, log them in as a local test user
       await verifyAgainstRoster(email);
     } catch (error) {
-      throw new Error(`PIN Login error: ${error.message}`);
+      throw new Error(error.message);
     }
   };
 
@@ -120,7 +120,6 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  // We are now exporting the new, working functions
   return (
     <AuthContext.Provider value={{ user, loginWithMagicLink, loginWithPin, logout, loading }}>
       {!loading && children}
