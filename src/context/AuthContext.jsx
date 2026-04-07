@@ -7,11 +7,14 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isPinVerified, setIsPinVerified] = useState(false);
+  const [isSupabaseAuth, setIsSupabaseAuth] = useState(false);
 
   useEffect(() => {
     const initializeAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
+        setIsSupabaseAuth(true);
+        setIsPinVerified(true);
         await verifyAgainstRoster(session.user.email, session.user);
       } else {
         const testUser = localStorage.getItem('charlie_test_user');
@@ -28,9 +31,12 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       (async () => {
         if (session?.user) {
+          setIsSupabaseAuth(true);
+          setIsPinVerified(true);
           await verifyAgainstRoster(session.user.email, session.user);
         } else if (!localStorage.getItem('charlie_test_user')) {
           setUser(null);
+          setIsSupabaseAuth(false);
         }
         setLoading(false);
       })();
@@ -110,11 +116,12 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('charlie_test_user');
     localStorage.removeItem('charlie_pin_verified');
     setIsPinVerified(false);
+    setIsSupabaseAuth(false);
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loginWithMagicLink, loginWithPin, logout, loading, isPinVerified, verifyPin }}>
+    <AuthContext.Provider value={{ user, loginWithMagicLink, loginWithPin, logout, loading, isPinVerified, isSupabaseAuth, verifyPin }}>
       {!loading && children}
     </AuthContext.Provider>
   );
