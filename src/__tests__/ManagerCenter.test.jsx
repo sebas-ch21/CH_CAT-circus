@@ -4,7 +4,6 @@ import { ManagerCenter } from '../pages/ManagerCenter';
 import { AuthContext } from '../context/AuthContext';
 import { BrowserRouter } from 'react-router-dom';
 
-// Deep mock for Supabase
 vi.mock('../lib/supabase', () => ({
   supabase: {
     from: vi.fn(() => ({
@@ -12,7 +11,12 @@ vi.mock('../lib/supabase', () => ({
       eq: vi.fn().mockReturnThis(),
       gte: vi.fn().mockReturnThis(),
       lte: vi.fn().mockReturnThis(),
+      lt: vi.fn().mockReturnThis(),
       in: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      delete: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockResolvedValue({ data: [], error: null }),
+      upsert: vi.fn().mockResolvedValue({ data: [], error: null }),
       order: vi.fn().mockResolvedValue({ data: [], error: null }),
       maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
     })),
@@ -32,7 +36,7 @@ const renderManagerCenter = () => render(
 describe('Manager Center Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers(); // Prevents the 30-second interval from hanging the tests
+    vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
   afterEach(() => {
@@ -49,20 +53,19 @@ describe('Manager Center Tests', () => {
 
   it('2. Switches to My Team Schedule tab', async () => {
     renderManagerCenter();
-    
+
     const teamTab = screen.getByText(/My Team Schedule/i);
     fireEvent.click(teamTab);
 
     await waitFor(() => {
-      // Verifies the save button and the interval labels loaded
-      expect(screen.getByText(/Save Team Schedule/i) || screen.getByText(/Save/i)).toBeInTheDocument();
+      expect(screen.getByText(/Save Team Schedule/i)).toBeInTheDocument();
       expect(screen.getByText(/07:00 AM MT/i)).toBeInTheDocument();
     });
   });
 
   it('3. Switches to Statistics tab', async () => {
     renderManagerCenter();
-    
+
     const statsTab = screen.getByText(/Dispatch Statistics/i);
     fireEvent.click(statsTab);
 

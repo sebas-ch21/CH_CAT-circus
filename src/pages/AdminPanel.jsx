@@ -2,10 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
 import { CSVUploadZone } from '../components/CSVUploadZone';
-import { 
-  Users, Calendar as CalendarIcon, ShieldCheck, Search, Trash2, 
-  AlertCircle, CheckCircle, Loader, Eye, EyeOff, Plus, X, ArrowRight, TableProperties
-} from 'lucide-react';
+import { Users, Calendar as CalendarIcon, ShieldCheck, Search, Trash2, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Loader, Eye, EyeOff, Plus, X, ArrowRight, TableProperties } from 'lucide-react';
 
 const TIME_INTERVALS = [
   { bps_mt: '07:00 AM', of_mt: '07:15 AM', of_ct: '08:15 AM', val: '07:00', of_val: '07:15' },
@@ -223,7 +220,52 @@ export function AdminPanel() {
   };
 
   // --- ROSTER LOGIC (Condensed for brevity) ---
-  const handleStaffUpload = async (csvData) => { /* logic */ };
+  const filteredProfiles = profiles.filter(p =>
+    p.email?.toLowerCase().includes(userSearchTerm.toLowerCase())
+  );
+
+  const resolveDuplicateRow = async (idx, choice) => {
+    const dup = pendingDuplicates[idx];
+    if (choice === 'new') {
+      await supabase.from('profiles').update({ role: dup.new.role, tier_rank: dup.new.tier_rank }).eq('id', dup.old.id);
+    }
+    const remaining = pendingDuplicates.filter((_, i) => i !== idx);
+    setPendingDuplicates(remaining);
+    if (remaining.length === 0) {
+      setShowDuplicateModal(false);
+      fetchProfiles();
+    }
+  };
+
+  const handleStaffUpload = async (csvData) => {
+    setLoadingStaff(true);
+    setStaffMessage(null);
+    const duplicates = [];
+    const newRows = [];
+    for (const row of csvData) {
+      if (!row.email) continue;
+      const existing = profiles.find(p => p.email?.toLowerCase() === row.email.toLowerCase());
+      if (existing) {
+        duplicates.push({ old: existing, new: row });
+      } else {
+        newRows.push({ email: row.email.toLowerCase(), role: row.role || 'IC', tier_rank: parseInt(row.tier_rank) || 3 });
+      }
+    }
+    if (newRows.length > 0) {
+      const { error } = await supabase.from('profiles').insert(newRows);
+      if (error) {
+        setStaffMessage({ type: 'error', text: `Insert error: ${error.message}` });
+      } else {
+        setStaffMessage({ type: 'success', text: `Added ${newRows.length} new staff members.` });
+      }
+    }
+    if (duplicates.length > 0) {
+      setPendingDuplicates(duplicates);
+      setShowDuplicateModal(true);
+    }
+    await fetchProfiles();
+    setLoadingStaff(false);
+  };
   const handleDeleteSlot = async (id) => {
     await supabase.from('bps_slots').delete().eq('id', id);
     fetchSlots();
@@ -399,7 +441,56 @@ export function AdminPanel() {
             </div>
           )}
 
-          {/* TAB 2 & 3: ROSTER & ACTIVE SLOTS (Render logic same as before, condensed for limits) */}
+          {activeTab === 'roster' && (
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+              <div className="xl:col-span-4 bg-gray-50 rounded-xl border border-gray-200 p-5 shadow-sm">
+                <h3 className="text-lg font-bold text-[#0F172A] mb-2">Import Roster CSV</h3>
+                <CSVUploadZone onUpload={handleStaffUpload} title="Drop CSV Data" description="Requires columns: email, role, tier_rank" expectedColumns={['email', 'role', 'tier_rank']} />
+                {staffMessage && (
+                  <div className={`mt-4 p-3 rounded-xl text-sm font-bold flex items-center gap-2 ${staffMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                    {staffMessage.text}
+                  </div>
+                )}
+              </div>
+              <div className="xl:col-span-8 flex flex-col">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold text-[#0F172A]">Active Team Roster</h3>
+                  <div className="relative w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input type="text" placeholder="Search..." value={userSearchTerm} onChange={(e) => setUserSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none" />
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto space-y-2 max-h-[600px]">
+                  {filteredProfiles.map((p) => (
+                    <div key={p.id} className="flex items-center gap-4 p-3 bg-white rounded-xl border border-gray-200">
+                      <div className="flex-1 font-bold text-[#0F172A] truncate">{p.email}</div>
+                      <select value={p.role} onChange={(e) => handleUpdateProfile(p.id, { role: e.target.value })} className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm font-semibold w-32">
+                        <option value="ADMIN">Admin</option>
+                        <option value="MANAGER">Manager</option>
+                        <option value="IC">IC (Staff)</option>
+                      </select>
+                      <select value={p.tier_rank || 3} onChange={(e) => handleUpdateProfile(p.id, { tier_rank: parseInt(e.target.value) })} className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm font-semibold w-28">
+                        <option value="1">Tier 1</option>
+                        <option value="2">Tier 2</option>
+                        <option value="3">Tier 3</option>
+                      </select>
+                      <div className="w-20 flex justify-end">
+                        {deleteConfirmId === p.id ? (
+                          <div className="flex gap-1 items-center bg-red-50 p-1 rounded-lg">
+                            <button onClick={() => handleDeleteProfile(p.id)} className="bg-red-600 text-white px-2 py-1 rounded text-[10px] font-bold">Yes</button>
+                            <button onClick={() => setDeleteConfirmId(null)} className="text-gray-500 hover:text-gray-800 p-1"><X className="w-4 h-4" /></button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setDeleteConfirmId(p.id)} className="p-2 text-gray-400 hover:text-red-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'appointments' && (
             <div>
               <div className="mb-6 flex justify-between items-center">
@@ -425,8 +516,109 @@ export function AdminPanel() {
             </div>
           )}
 
+          {activeTab === 'security' && (
+            <div className="max-w-4xl mx-auto py-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="bg-gray-50 rounded-2xl border border-gray-200 p-8 shadow-sm">
+                  <div className="flex items-center gap-3 mb-6">
+                    <ShieldCheck className="w-6 h-6 text-[#0F172A]" />
+                    <h3 className="text-lg font-bold text-[#0F172A]">Admin PIN</h3>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="relative">
+                      <input type={showAdminPin ? 'text' : 'password'} value={currentAdminPin} readOnly className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none font-mono text-gray-500 font-bold pr-12" />
+                      <button type="button" onClick={() => setShowAdminPin(!showAdminPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        {showAdminPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="flex-1 relative">
+                        <input type={showNewAdminPin ? 'text' : 'password'} value={newAdminPin} onChange={(e) => setNewAdminPin(e.target.value)} placeholder="New PIN (min 4 chars)" className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl outline-none focus:border-[#0F172A] font-bold pr-12" />
+                        <button type="button" onClick={() => setShowNewAdminPin(!showNewAdminPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                          {showNewAdminPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <button onClick={() => handleUpdatePin('ADMIN')} className="px-6 rounded-xl font-bold text-white bg-[#0F172A]">Save</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-[#F0F7F8] rounded-2xl border border-[#D1ECEF] p-8 shadow-sm">
+                  <div className="flex items-center gap-3 mb-6">
+                    <Users className="w-6 h-6 text-[#007C8C]" />
+                    <h3 className="text-lg font-bold text-[#0F172A]">Manager PIN</h3>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="relative">
+                      <input type={showManagerPin ? 'text' : 'password'} value={currentManagerPin} readOnly className="w-full px-4 py-3 bg-white border border-[#D1ECEF] rounded-xl outline-none font-mono text-gray-500 font-bold pr-12" />
+                      <button type="button" onClick={() => setShowManagerPin(!showManagerPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        {showManagerPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="flex-1 relative">
+                        <input type={showNewManagerPin ? 'text' : 'password'} value={newManagerPin} onChange={(e) => setNewManagerPin(e.target.value)} placeholder="New PIN (min 4 chars)" className="w-full px-4 py-3 border-2 border-[#D1ECEF] rounded-xl outline-none focus:border-[#007C8C] font-bold pr-12" />
+                        <button type="button" onClick={() => setShowNewManagerPin(!showNewManagerPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                          {showNewManagerPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <button onClick={() => handleUpdatePin('MANAGER')} className="px-6 rounded-xl font-bold text-white bg-[#007C8C]">Save</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
+
+      {showDuplicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/80 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden">
+            <div className="bg-[#0F172A] p-8 text-white flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-black tracking-tight flex items-center gap-3">
+                  <AlertCircle className="w-6 h-6 text-yellow-400" /> Resolve Data Conflicts
+                </h2>
+                <p className="text-sm font-medium opacity-80 mt-2">{pendingDuplicates.length} duplicates detected.</p>
+              </div>
+            </div>
+            <div className="p-8 max-h-[60vh] overflow-y-auto bg-gray-50">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200">
+                    <th className="pb-4 px-4">Email</th>
+                    <th className="pb-4 px-4">Current Data</th>
+                    <th className="pb-4 text-center"><ArrowRight className="inline w-4 h-4 text-gray-300" /></th>
+                    <th className="pb-4 px-4">Incoming Data</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {pendingDuplicates.map((dup, idx) => (
+                    <tr key={idx} className="hover:bg-white transition-colors">
+                      <td className="py-6 px-4 font-bold text-[#0F172A] text-base">{dup.old.email}</td>
+                      <td className="py-6 px-4">
+                        <button onClick={() => resolveDuplicateRow(idx, 'old')} className="w-full text-left p-4 rounded-2xl border-2 border-gray-200 hover:border-gray-400 hover:bg-gray-100 transition-all">
+                          <div className="text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-2">KEEP EXISTING</div>
+                          <div className="font-black text-gray-800 text-lg">{dup.old.role} - Tier {dup.old.tier_rank}</div>
+                        </button>
+                      </td>
+                      <td className="text-center text-gray-300 font-black text-xs">VS</td>
+                      <td className="py-6 px-4">
+                        <button onClick={() => resolveDuplicateRow(idx, 'new')} className="w-full text-left p-4 rounded-2xl border-2 border-[#D1ECEF] bg-[#F0F7F8] hover:border-[#007C8C] hover:shadow-md transition-all">
+                          <div className="text-[10px] uppercase tracking-widest text-[#007C8C] font-bold mb-2">OVERWRITE WITH NEW</div>
+                          <div className="font-black text-[#0F172A] text-lg">{dup.new.role} - Tier {dup.new.tier_rank}</div>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

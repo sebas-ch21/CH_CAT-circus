@@ -19,7 +19,7 @@ export function Login() {
     if (user) {
       if (user.role === 'ADMIN') navigate('/admin');
       else if (user.role === 'MANAGER') navigate('/manager');
-      else navigate('/ic');
+      else navigate('/dashboard');
     }
   }, [user, navigate]);
 
