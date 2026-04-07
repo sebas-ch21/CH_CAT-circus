@@ -14,12 +14,12 @@ export function Login() {
   const { user, loginWithMagicLink, loginWithPin } = useAuth();
   const navigate = useNavigate();
 
-  // HOLISTIC FIX: Listen for 'user' state change and redirect immediately
+  // Route user to the correct dashboard mapping immediately upon login
   useEffect(() => {
     if (user) {
       if (user.role === 'ADMIN') navigate('/admin');
       else if (user.role === 'MANAGER') navigate('/manager');
-      else navigate('/dashboard');
+      else navigate('/dashboard'); // Routed to the correct IC Dashboard path
     }
   }, [user, navigate]);
 
@@ -36,7 +36,7 @@ export function Login() {
         setSuccess(true);
       }
     } catch (err) {
-      setError(err.message || 'An error occurred during login.');
+      setError(err.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -56,7 +56,7 @@ export function Login() {
             <div className="text-center p-6 bg-green-50 rounded-xl border border-green-100 animate-in zoom-in duration-300">
               <MailCheck className="w-12 h-12 text-green-500 mx-auto mb-4" />
               <h3 className="text-lg font-bold text-green-900 mb-2">Check your email</h3>
-              <p className="text-sm text-green-700 font-medium">We sent a magic link to <strong>{email}</strong>.</p>
+              <p className="text-sm text-green-700 font-medium">Magic login link sent to <strong>{email}</strong>.</p>
               <button onClick={() => setSuccess(false)} className="mt-6 text-sm font-bold text-[#5E4791] hover:underline">Try a different email</button>
             </div>
           ) : (
@@ -74,32 +74,23 @@ export function Login() {
                 <div className="animate-in slide-in-from-top-2 duration-200">
                   <label className="block text-sm font-bold text-gray-700 mb-2">Test PIN</label>
                   <input
-                    type="password"
-                    value={pin} // NOT REQUIRED: Allows ICs to leave blank
-                    onChange={(e) => setPin(e.target.value)}
+                    type="password" value={pin} onChange={(e) => setPin(e.target.value)}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-medium focus:border-[#5E4791] outline-none transition-colors"
-                    placeholder="Enter PIN (ICs leave blank)"
+                    placeholder="Enter PIN (IC users leave blank)"
                   />
                 </div>
               )}
 
-              {error && <div className="p-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl border border-red-100 text-center">{error}</div>}
+              {error && <div className="p-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl text-center border border-red-100">{error}</div>}
 
-              <button
-                type="submit" disabled={loading}
-                className="w-full flex items-center justify-center gap-3 py-4 bg-[#0F172A] rounded-2xl text-white font-bold hover:bg-gray-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
-              >
-                {loading ? <Loader className="w-6 h-6 animate-spin" /> : (usePin ? 'Login with PIN' : 'Send Magic Link')}
+              <button type="submit" disabled={loading} className="w-full py-4 rounded-xl font-black text-white bg-[#0F172A] hover:bg-gray-800 transition-all shadow-lg flex justify-center items-center gap-2">
+                {loading ? <Loader className="w-5 h-5 animate-spin" /> : (usePin ? 'Login with PIN' : 'Send Magic Link')}
               </button>
             </form>
           )}
 
           {!success && (
-            <button 
-              onClick={() => setUsePin(!usePin)} 
-              type="button"
-              className="mt-8 w-full text-center text-sm font-bold text-gray-400 hover:text-gray-600 flex items-center justify-center gap-2"
-            >
+            <button onClick={() => setUsePin(!usePin)} type="button" className="mt-8 w-full text-center text-sm font-bold text-gray-400 hover:text-gray-600 flex items-center justify-center gap-2">
               <KeyRound className="w-4 h-4" /> {usePin ? 'Switch to Magic Link' : 'Test User? Login with PIN'}
             </button>
           )}
