@@ -17,7 +17,7 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
     if (!selectedIC || !selectedSlot) return;
     setDispatching(true);
     try {
-      // ONE ATOMIC CALL: The database handles the slot, the profile, and the queue simultaneously.
+      // ATOMIC TRANSACTION: The database handles the slot, profile, and queue cleanup safely.
       const { error } = await supabase.rpc('manager_dispatch_ic', {
         p_slot_id: selectedSlot.id,
         p_ic_id: selectedIC.ic_id,
