@@ -4,7 +4,7 @@ import { TopNav } from '../components/TopNav';
 import { CSVUploadZone } from '../components/CSVUploadZone';
 import { 
   Users, Calendar as CalendarIcon, ShieldCheck, Search, Trash2, 
-  AlertCircle, CheckCircle, Loader, Plus, X, ArrowRight, TableProperties, Save
+  AlertCircle, CheckCircle, Loader, Plus, X, ArrowRight, TableProperties, Save, ShieldAlert
 } from 'lucide-react';
 
 const TIME_INTERVALS = [
@@ -112,9 +112,20 @@ export function AdminPanel() {
     setPlanData(loadedIntervals);
   };
 
-  const updateInterval = (timeVal, field, value) => setPlanData(prev => ({ ...prev, [timeVal]: { ...prev[timeVal], [field]: value } }));
+  // DATA SANITIZATION: Prevent negatives and decimals
+  const sanitizeNumber = (val) => {
+    if (val === '') return '';
+    const num = Math.abs(parseInt(val, 10));
+    return isNaN(num) ? '' : num;
+  };
+
+  const updateInterval = (timeVal, field, value) => {
+    const cleanVal = field === 'override' ? sanitizeNumber(value) : value;
+    setPlanData(prev => ({ ...prev, [timeVal]: { ...prev[timeVal], [field]: cleanVal } }));
+  };
+
   const addManager = (timeVal) => { setPlanData(prev => { const updated = { ...prev }; updated[timeVal] = updated[timeVal] || { override: '', assignments: [] }; updated[timeVal].assignments.push({ email: '', count: 1 }); return updated; }); };
-  const updateManager = (timeVal, idx, field, value) => { setPlanData(prev => { const updated = { ...prev }; updated[timeVal].assignments[idx][field] = field === 'count' ? parseInt(value) : value; return updated; }); };
+  const updateManager = (timeVal, idx, field, value) => { setPlanData(prev => { const updated = { ...prev }; updated[timeVal].assignments[idx][field] = field === 'count' ? sanitizeNumber(value) || 1 : value; return updated; }); };
   const removeManager = (timeVal, idx) => { setPlanData(prev => { const updated = { ...prev }; updated[timeVal].assignments.splice(idx, 1); return updated; }); };
 
   const getDenverOffsetString = (dateStr) => {
@@ -128,7 +139,20 @@ export function AdminPanel() {
     return '-06:00'; 
   };
 
+  // GLOBAL VALIDATION CHECK: Is any row over-allocated?
+  const hasOverAllocation = TIME_INTERVALS.some(interval => {
+    const row = planData[interval.val] || { override: '', assignments: [] };
+    const totalBps = consolidatedTotals[interval.val] || 0;
+    const pct = Number(calcPercentage) || 0;
+    const calcSuggested = totalBps <= 12 ? 0 : Math.ceil(totalBps * (pct / 100));
+    const targetOverflow = row.override !== '' ? parseInt(row.override) : calcSuggested;
+    const filledSlots = row.assignments.reduce((sum, a) => sum + (parseInt(a.count)||0), 0);
+    return targetOverflow > 0 && filledSlots > targetOverflow;
+  });
+
   const handlePublishPlan = async () => {
+    if (hasOverAllocation) return; // Hard block just in case
+    
     setPublishing(true); setPublishMessage(null);
     await supabase.from('daily_capacity_plans').upsert({ plan_date: selectedDate, plan_data: { calcPercentage: Number(calcPercentage) || 0, intervals: planData } }, { onConflict: 'plan_date' });
 
@@ -233,6 +257,7 @@ export function AdminPanel() {
           
           {activeTab === 'circus' && (
             <div className="space-y-6">
+              
               {/* STICKY ACTION HEADER */}
               <div className="sticky top-0 z-20 bg-white pt-2 pb-4 border-b border-gray-200 mb-6 flex flex-col xl:flex-row justify-between items-start xl:items-end gap-4 shadow-sm">
                 <div>
@@ -246,7 +271,7 @@ export function AdminPanel() {
                       <input 
                         type="number" min="0" max="100" 
                         value={calcPercentage} 
-                        onChange={(e) => setCalcPercentage(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                        onChange={(e) => setCalcPercentage(sanitizeNumber(e.target.value))}
                         className="w-20 px-3 py-2 border-2 border-gray-200 rounded-lg text-[#0F172A] font-black focus:border-[#5E4791] outline-none"
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">%</span>
@@ -256,8 +281,18 @@ export function AdminPanel() {
                     <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Target Date</label>
                     <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="px-4 py-2 border-2 border-gray-200 rounded-lg text-[#0F172A] font-black focus:border-[#5E4791] outline-none h-[44px]" />
                   </div>
-                  <button onClick={handlePublishPlan} disabled={publishing} style={{backgroundColor: '#0F172A', color: 'white'}} className="px-6 h-[44px] mt-[18px] rounded-lg font-black shadow-lg hover:opacity-90 disabled:opacity-50 transition-all flex items-center gap-2">
-                    {publishing ? <Loader className="w-5 h-5 animate-spin" /> : <><Save className="w-4 h-4"/> Save & Publish</>}
+                  <button 
+                    onClick={handlePublishPlan} 
+                    disabled={publishing || hasOverAllocation} 
+                    className={`px-6 h-[44px] mt-[18px] rounded-lg font-black shadow-lg transition-all flex items-center gap-2 ${
+                      hasOverAllocation 
+                        ? 'bg-red-100 text-red-400 cursor-not-allowed' 
+                        : 'bg-[#0F172A] text-white hover:opacity-90 disabled:opacity-50'
+                    }`}
+                  >
+                    {publishing ? <Loader className="w-5 h-5 animate-spin" /> : 
+                     hasOverAllocation ? <><ShieldAlert className="w-4 h-4"/> Fix Errors to Publish</> : 
+                     <><Save className="w-4 h-4"/> Save & Publish</>}
                   </button>
                 </div>
               </div>
@@ -288,21 +323,29 @@ export function AdminPanel() {
                       const calcSuggested = totalBps <= 12 ? 0 : Math.ceil(totalBps * (pct / 100));
                       const targetOverflow = row.override !== '' ? parseInt(row.override) : calcSuggested;
                       const filledSlots = row.assignments.reduce((sum, a) => sum + (parseInt(a.count)||0), 0);
+                      
+                      // LOGIC: Over-allocation and Under-allocation checks
                       const isShort = targetOverflow > 0 && filledSlots < targetOverflow;
+                      const isOver = targetOverflow > 0 && filledSlots > targetOverflow;
 
                       return (
-                        <tr key={interval.val} className="border-b border-gray-100 hover:bg-purple-50/30 transition-colors">
-                          <td className="p-3 font-bold text-[#0F172A] sticky left-0 bg-white group-hover:bg-purple-50/10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] z-10 whitespace-nowrap">{interval.bps_mt}</td>
+                        <tr key={interval.val} className={`border-b transition-colors ${isOver ? 'bg-red-50 border-red-200' : 'border-gray-100 hover:bg-purple-50/30'}`}>
+                          <td className={`p-3 font-bold sticky left-0 z-10 whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${isOver ? 'bg-red-50 text-red-900' : 'text-[#0F172A] bg-white group-hover:bg-purple-50/10'}`}>{interval.bps_mt}</td>
                           <td className="p-3 font-black text-[#5E4791] border-r border-gray-100 whitespace-nowrap">{interval.of_mt}</td>
                           {managers.map(m => {
                             const val = managerSchedules.find(s => s.manager_email === m.email)?.schedule_data?.[interval.val] || 0;
                             return <td key={m.id} className="p-3 text-center border-r border-gray-100 text-gray-500 font-semibold">{val > 0 ? val : '-'}</td>;
                           })}
                           <td className="p-3 text-center font-black text-xl text-[#0F172A] bg-gray-50 border-r-2 border-gray-200">{totalBps}</td>
-                          <td className="p-3 text-center bg-[#F3EFF9]/50 border-r border-purple-100">
+                          <td className={`p-3 text-center border-r ${isOver ? 'bg-red-100/50 border-red-200' : 'bg-[#F3EFF9]/50 border-purple-100'}`}>
                             <div className="flex flex-col items-center">
-                              <span className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Calc: {calcSuggested}</span>
-                              <input type="number" min="0" placeholder="Set" value={row.override} onChange={(e) => updateInterval(interval.val, 'override', e.target.value)} className="w-16 px-2 py-1.5 border-2 border-[#E7DFF3] bg-white text-[#5E4791] rounded-lg text-center font-black outline-none focus:border-[#5E4791]" />
+                              <span className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${isOver ? 'text-red-500' : 'text-gray-400'}`}>Calc: {calcSuggested}</span>
+                              <input 
+                                type="number" min="0" placeholder="Set" 
+                                value={row.override} 
+                                onChange={(e) => updateInterval(interval.val, 'override', e.target.value)} 
+                                className={`w-16 px-2 py-1.5 border-2 rounded-lg text-center font-black outline-none ${isOver ? 'border-red-300 text-red-700 focus:border-red-500' : 'border-[#E7DFF3] text-[#5E4791] focus:border-[#5E4791]'}`} 
+                              />
                             </div>
                           </td>
                           <td className="p-3 min-w-[300px]">
@@ -314,14 +357,26 @@ export function AdminPanel() {
                                     {managers.map(m => <option key={m.email} value={m.email}>{m.email.split('@')[0]}</option>)}
                                   </select>
                                   <select value={assign.count} onChange={(e) => updateManager(interval.val, idx, 'count', e.target.value)} className="px-2 py-1.5 border-2 border-gray-200 rounded-lg text-sm font-black w-16 outline-none focus:border-[#5E4791]">
-                                    <option value={1}>1</option><option value={2}>2</option>
+                                    <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option><option value={5}>5</option>
                                   </select>
-                                  <button onClick={() => removeManager(interval.val, idx)} className="text-red-400 hover:text-red-600 p-1 bg-red-50 rounded-md"><Trash2 className="w-4 h-4" /></button>
+                                  <button onClick={() => removeManager(interval.val, idx)} className="text-red-400 hover:text-red-600 p-1 bg-red-50 hover:bg-red-100 rounded-md transition-colors"><Trash2 className="w-4 h-4" /></button>
                                 </div>
                               ))}
                               <div className="flex items-center justify-between pt-1">
-                                <button onClick={() => addManager(interval.val)} className="text-[10px] font-black uppercase tracking-widest text-[#5E4791] flex items-center gap-1 hover:bg-purple-100 px-2 py-1.5 rounded-md transition-colors"><Plus className="w-3 h-3" /> Add Host</button>
-                                {targetOverflow > 0 && <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md ${isShort ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{filledSlots} / {targetOverflow} Filled</span>}
+                                <button onClick={() => addManager(interval.val)} className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1 px-2 py-1.5 rounded-md transition-colors ${isOver ? 'text-red-600 hover:bg-red-100' : 'text-[#5E4791] hover:bg-purple-100'}`}>
+                                  <Plus className="w-3 h-3" /> Add Host
+                                </button>
+                                
+                                {/* DYNAMIC STATUS BADGE */}
+                                {targetOverflow > 0 && (
+                                  <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md transition-colors shadow-sm ${
+                                    isOver ? 'bg-red-500 text-white animate-pulse' : 
+                                    isShort ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' : 
+                                    'bg-green-100 text-green-700 border border-green-200'
+                                  }`}>
+                                    {isOver ? `Over by ${filledSlots - targetOverflow} Slot(s)!` : `${filledSlots} / ${targetOverflow} Filled`}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -422,6 +477,7 @@ export function AdminPanel() {
         </div>
       </div>
 
+      {/* MODALS */}
       {showDuplicateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/80 backdrop-blur-sm">
           <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in duration-200">
