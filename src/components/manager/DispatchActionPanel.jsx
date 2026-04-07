@@ -17,22 +17,20 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
     if (!selectedIC || !selectedSlot) return;
     setDispatching(true);
     try {
-      // 1. Assign Slot
-      const { error: slotErr } = await supabase.from('bps_slots').update({
-        status: 'ASSIGNED',
-        assigned_ic_id: selectedIC.ic_id,
-        assigned_at: new Date().toISOString(),
-        zoom_link: zoomLinkInput || selectedSlot.zoom_link
-      }).eq('id', selectedSlot.id);
+      // THE FIX: One single atomic call to the Database RPC. 
+      // This bypasses RLS and guarantees the slot, profile, and queue all update together perfectly.
+      const { error } = await supabase.rpc('manager_dispatch_ic', {
+        p_slot_id: selectedSlot.id,
+        p_ic_id: selectedIC.ic_id,
+        p_zoom_link: zoomLinkInput || selectedSlot.zoom_link || ''
+      });
       
-      if (slotErr) throw slotErr;
-
-      // 2. Mark Profile BUSY & Clear Queue
-      await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', selectedIC.ic_id);
-      await supabase.from('queue_entries').delete().eq('ic_id', selectedIC.ic_id).catch(()=>{});
+      if (error) throw error;
 
       toast.success('Dispatched! Awaiting IC Confirmation.');
       setShowConfirmModal(false);
+      
+      // Force UI sync
       if (onDispatchComplete) onDispatchComplete();
     } catch (error) {
       toast.error('Dispatch failed.');
