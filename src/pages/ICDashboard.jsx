@@ -11,36 +11,43 @@ export function ICDashboard() {
   const [inQueue, setInQueue] = useState(false);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(300); // 5 mins visual timer
+  const [timeLeft, setTimeLeft] = useState(300); // 5 mins
   const [profileTier, setProfileTier] = useState(3);
 
   const checkStatus = useCallback(async () => {
     if (!user?.id || loading || actionLoading) return; 
     try {
-      // 1. SELF-HEALING ARCHITECTURE: ALWAYS check for active assignment first
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      if (profile) setProfileTier(profile.tier_rank);
+
+      // 1. ALWAYS check for active assignment first
       const { data: slotData } = await supabase.from('bps_slots')
         .select('*')
         .eq('assigned_ic_id', user.id)
         .in('status', ['ASSIGNED', 'CONFIRMED'])
         .limit(1);
       
-      const activeAssignment = slotData?.[0] || null;
-      setAssignment(activeAssignment);
+      const activeSlot = slotData?.[0] || null;
+      setAssignment(activeSlot);
 
-      if (activeAssignment) {
-        // We found a match! Forcefully erase the queue state locally & remotely
+      if (activeSlot) {
         setInQueue(false);
+        // Self-heal: ensure queue entry is gone since we have a match
         await supabase.from('queue_entries').delete().eq('ic_id', user.id);
-        await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', user.id);
       } else {
-        // 2. ONLY check queue if we have NO assignment
-        const { data: queueData } = await supabase.from('queue_entries').select('*').eq('ic_id', user.id).limit(1);
-        setInQueue(queueData && queueData.length > 0);
+        // 2. Only show queue if profile dictates it
+        if (profile?.current_status === 'IN_QUEUE') {
+          setInQueue(true);
+          // Self-heal: ensure queue table matches profile state
+          const { data: q } = await supabase.from('queue_entries').select('id').eq('ic_id', user.id);
+          if (!q || q.length === 0) {
+            await supabase.from('queue_entries').insert([{ ic_id: user.id, entered_at: new Date().toISOString() }]);
+          }
+        } else {
+          setInQueue(false);
+          await supabase.from('queue_entries').delete().eq('ic_id', user.id);
+        }
       }
-
-      // Update analytics tier tracking
-      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).limit(1);
-      if (profileData?.[0]) setProfileTier(profileData[0].tier_rank);
     } catch (error) {
       console.error('Error checking status:', error);
     }
@@ -53,13 +60,12 @@ export function ICDashboard() {
     return () => clearInterval(interval);
   }, [checkStatus]);
 
-  // Purely Visual 5-Minute Timer (Server handles actual timeout)
+  // 5-Minute Visual Timer
   useEffect(() => {
     if (assignment?.status === 'ASSIGNED' && assignment.assigned_at) {
       const assignedTime = new Date(assignment.assigned_at).getTime();
       const timer = setInterval(() => {
-        const now = new Date().getTime();
-        const diffInSeconds = Math.floor((300000 - (now - assignedTime)) / 1000); 
+        const diffInSeconds = Math.floor((300000 - (Date.now() - assignedTime)) / 1000); 
         setTimeLeft(diffInSeconds > 0 ? diffInSeconds : 0);
       }, 1000);
       return () => clearInterval(timer);
@@ -87,14 +93,15 @@ export function ICDashboard() {
     if (actionLoading || !assignment) return;
     setActionLoading(true);
     try {
-      // 1. Log for statistics
+      // Write log to DB
       await supabase.from('dispatch_logs').insert([{
         ic_id: user.id, ic_email: user.email, tier_rank: profileTier,
         manager_email: assignment.host_manager || 'Unknown',
         patient_identifier: assignment.patient_identifier, start_time: assignment.start_time
       }]);
-      // 2. Lock the match
+      // Update states
       await supabase.from('bps_slots').update({ status: 'CONFIRMED' }).eq('id', assignment.id);
+      await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', user.id);
       toast.success('Match Confirmed!');
       await checkStatus();
     } catch (error) { toast.error('Failed to confirm match.'); } finally { setActionLoading(false); }
@@ -104,10 +111,9 @@ export function ICDashboard() {
     if (actionLoading || !assignment) return;
     setActionLoading(true);
     try {
-      // 1. Kick the slot back to OPEN
+      // Free the slot
       await supabase.from('bps_slots').update({ status: 'OPEN', assigned_ic_id: null, assigned_at: null }).eq('id', assignment.id);
-      // 2. Automatically put the IC back in the queue
-      await supabase.from('queue_entries').insert([{ ic_id: user.id, entered_at: new Date().toISOString() }]);
+      // Put IC back in queue
       await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', user.id);
       toast.success('Assignment rejected. Re-entered queue.');
       await checkStatus();
@@ -119,7 +125,7 @@ export function ICDashboard() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // UI HIERARCHY: Assignment > Confirmed > Queue > Idle
+  // --- UI RENDER FLOW ---
 
   if (assignment && assignment.status === 'ASSIGNED') {
     return (
