@@ -30,7 +30,7 @@ export function useDispatchData() {
       }
     }
 
-    // 3. Bulletproof Slot Roll-off (Deletes OPEN slots that are older than 12 hours. No timezone math needed)
+    // 3. Roll-off OPEN slots older than 12 hours
     const twelveHoursAgo = new Date(now - 12 * 60 * 60 * 1000).toISOString();
     const { data: staleSlots } = await supabase.from('bps_slots').select('id').eq('status', 'OPEN').lt('start_time', twelveHoursAgo);
     if (staleSlots?.length > 0) {
@@ -40,23 +40,36 @@ export function useDispatchData() {
 
   const fetchData = useCallback(async () => {
     try {
-      // 1. QUEUE: Strictly rely on profile status to dictate who is waiting
-      const { data: qData } = await supabase.from('queue_entries')
-        .select('*, profiles!inner(email, tier_rank, current_status)')
-        .order('entered_at');
-        
-      if (qData) {
-        const activeQueue = qData.filter(q => q.profiles?.current_status === 'IN_QUEUE');
-        setQueue(activeQueue.sort((a, b) => (a.profiles?.tier_rank || 3) - (b.profiles?.tier_rank || 3) || new Date(a.entered_at) - new Date(b.entered_at)));
+      // A. Fetch All Profiles (To manually map emails and prevent JOIN failures)
+      const { data: allProfiles } = await supabase.from('profiles').select('id, email, tier_rank, current_status');
+      const profileMap = {};
+      if (allProfiles) {
+        allProfiles.forEach(p => profileMap[p.id] = p);
       }
 
-      // 2. OPEN SLOTS
+      // B. Fetch Queue
+      const { data: qData } = await supabase.from('queue_entries').select('*').order('entered_at');
+      if (qData) {
+        const enrichedQueue = qData
+          .map(q => ({ ...q, profiles: profileMap[q.ic_id] }))
+          .filter(q => q.profiles?.current_status === 'IN_QUEUE');
+        
+        setQueue(enrichedQueue.sort((a, b) => (a.profiles?.tier_rank || 3) - (b.profiles?.tier_rank || 3) || new Date(a.entered_at) - new Date(b.entered_at)));
+      }
+
+      // C. Fetch Open Slots
       const { data: oSlots } = await supabase.from('bps_slots').select('*').eq('status', 'OPEN').order('start_time');
       if (oSlots) setOpenSlots(oSlots);
 
-      // 3. SCHEDULED SLOTS
-      const { data: sSlots } = await supabase.from('bps_slots').select('*, profiles(email)').in('status', ['ASSIGNED', 'CONFIRMED']).order('start_time');
-      if (sSlots) setScheduledSlots(sSlots);
+      // D. Fetch Scheduled Slots
+      const { data: sSlots } = await supabase.from('bps_slots').select('*').in('status', ['ASSIGNED', 'CONFIRMED']).order('start_time');
+      if (sSlots) {
+        const mappedSlots = sSlots.map(slot => ({
+          ...slot,
+          ic_email: profileMap[slot.assigned_ic_id]?.email || 'Unknown'
+        }));
+        setScheduledSlots(mappedSlots);
+      }
     } catch (err) {
       console.error('Data Fetch Error:', err);
     }
@@ -64,7 +77,6 @@ export function useDispatchData() {
 
   useEffect(() => {
     fetchData();
-    // Non-destructive polling
     const interval = setInterval(() => { fetchData(); runSafeSweepers(); }, 3000); 
     return () => clearInterval(interval);
   }, [fetchData]);
