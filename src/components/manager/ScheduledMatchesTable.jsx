@@ -12,11 +12,12 @@ export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, 
       const icId = slot.assigned_ic_id;
       // 1. Kick slot back to OPEN
       await supabase.from('bps_slots').update({ status: 'OPEN', assigned_ic_id: null, assigned_at: null }).eq('id', slot.id);
-      // 2. Put IC back in queue
+      
+      // 2. Put IC back in queue via Profile State Machine
       if (icId) {
         await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', icId);
-        await supabase.from('queue_entries').insert([{ ic_id: icId, entered_at: new Date().toISOString() }]);
       }
+      
       toast.success('Assignment Cancelled. IC returned to queue.');
       if (onDataChange) onDataChange();
     } catch (error) {
@@ -51,7 +52,7 @@ export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, 
                     {slot.status === 'ASSIGNED' ? (
                       <div className="flex items-center gap-3">
                         <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-md border bg-yellow-50 text-yellow-700 border-yellow-200">
-                          PENDING (30m)
+                          PENDING (5m)
                         </span>
                         <button 
                           onClick={() => handleSendBackToQueue(slot)} 
