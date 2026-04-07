@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
-import { CircleCheck as CheckCircle2, Loader, Info, XCircle, User, Video, Clock } from 'lucide-react';
+import { CircleCheck as CheckCircle2, Loader, Info, XCircle, Video, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export function ICDashboard() {
@@ -27,7 +27,7 @@ export function ICDashboard() {
         const now = new Date().getTime();
         const diffInSeconds = Math.floor((300000 - (now - assignedTime)) / 1000);
         if (diffInSeconds <= 0) {
-          setAssignment(null); // Sweeper will handle the DB side
+          setAssignment(null);
           setTimeLeft(0);
         } else {
           setTimeLeft(diffInSeconds);
@@ -37,6 +37,7 @@ export function ICDashboard() {
     }
   }, [assignment]);
 
+  // Real-time listener
   useEffect(() => {
     if (!user?.id) return;
     const channel = supabase
@@ -49,7 +50,7 @@ export function ICDashboard() {
   const checkStatus = async () => {
     if (!user?.id || loading || confirming) return; 
     try {
-      // 1. ALWAYS check for an active assignment FIRST
+      // 1. PRINCIPAL FIX: ALWAYS check for an active assignment FIRST
       const { data: slotData } = await supabase.from('bps_slots')
         .select('*')
         .eq('assigned_ic_id', user.id)
@@ -61,10 +62,16 @@ export function ICDashboard() {
 
       // 2. Only check the queue if they DON'T have an active assignment
       if (!activeAssignment) {
-        const { data: queueData } = await supabase.from('queue_entries').select('*').eq('ic_id', user.id).limit(1);
+        const { data: queueData } = await supabase.from('queue_entries')
+          .select('*')
+          .eq('ic_id', user.id)
+          .limit(1);
         setInQueue(queueData && queueData.length > 0);
       } else {
-        setInQueue(false); // Force queue to false if they have a match
+        // SELF-HEALING STATE: If they have an assignment, force the queue UI off.
+        setInQueue(false);
+        // And ensure they are deleted from the queue table using their own RLS permissions.
+        await supabase.from('queue_entries').delete().eq('ic_id', user.id);
       }
 
       // 3. Update profile tier for statistics logging
@@ -110,7 +117,6 @@ export function ICDashboard() {
     if (confirming || !assignment) return;
     setConfirming(true);
     try {
-      // Log for statistics
       await supabase.from('dispatch_logs').insert([{
         ic_id: user.id,
         ic_email: user.email,
@@ -138,24 +144,7 @@ export function ICDashboard() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  if (inQueue) {
-    return (
-      <div className="min-h-screen bg-white flex flex-col">
-        <TopNav />
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm space-y-8 text-center">
-            <div className="flex justify-center mb-4"><CheckCircle2 className="w-24 h-24 text-green-500" /></div>
-            <h1 className="text-2xl font-semibold text-gray-900 mb-2">Successfully Entered Queue</h1>
-            <p className="text-gray-600 mb-8">Waiting for manager dispatch. Do not close this page.</p>
-            <button onClick={handleExitQueue} disabled={loading} className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-sm">
-              {loading ? <Loader className="w-6 h-6 animate-spin" /> : <><XCircle className="w-6 h-6" /> Exit Queue</>}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  // Note: The UI order here is crucial. We now check assignment BEFORE inQueue.
   if (assignment && assignment.status === 'ASSIGNED') {
     return (
       <div className="min-h-screen bg-white flex flex-col">
@@ -217,6 +206,25 @@ export function ICDashboard() {
 
             <button onClick={handleEnterQueue} disabled={loading} className="mt-8 w-full bg-[#A890D3] hover:bg-[#8B6FC4] text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all shadow-lg">
               {loading ? 'Entering Queue...' : 'Patient No-Show: Re-enter Queue'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback to queue view ONLY if there are no assignments
+  if (inQueue) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col">
+        <TopNav />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="w-full max-w-sm space-y-8 text-center">
+            <div className="flex justify-center mb-4"><CheckCircle2 className="w-24 h-24 text-green-500" /></div>
+            <h1 className="text-2xl font-semibold text-gray-900 mb-2">Successfully Entered Queue</h1>
+            <p className="text-gray-600 mb-8">Waiting for manager dispatch. Do not close this page.</p>
+            <button onClick={handleExitQueue} disabled={loading} className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-sm">
+              {loading ? <Loader className="w-6 h-6 animate-spin" /> : <><XCircle className="w-6 h-6" /> Exit Queue</>}
             </button>
           </div>
         </div>
