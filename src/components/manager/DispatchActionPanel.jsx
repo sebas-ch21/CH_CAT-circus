@@ -2,19 +2,6 @@ import { useState } from 'react';
 import { CircleCheck, User, Calendar, Loader, CircleAlert as AlertCircle, X, Link as LinkIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
-/**
- * DispatchActionPanel Component
- *
- * The right-side panel for confirming and executing IC-to-slot dispatches.
- * Displays selected IC and slot, allows Zoom link input, and triggers the dispatch.
- *
- * @param {Object} props
- * @param {Object} props.selectedIC - Selected queue entry with IC data
- * @param {Object} props.selectedSlot - Selected open slot
- * @param {Function} props.onDispatchComplete - Callback after successful dispatch
- * @param {Function} props.getDualTimes - Helper to format times
- * @param {string} props.timeZone - Selected timezone
- */
 export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComplete, getDualTimes, timeZone }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [zoomLinkInput, setZoomLinkInput] = useState('');
@@ -25,20 +12,12 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
     setShowConfirmModal(true);
   };
 
-  /**
-   * Executes the dispatch operation
-   *
-   * Steps:
-   * 1. Update slot status to ASSIGNED with IC assignment and timestamp
-   * 2. Update IC profile status to BUSY
-   * 3. CRITICAL: Delete IC from the queue so they aren't stuck!
-   * 4. Trigger callback to refresh data
-   */
   const executeDispatch = async () => {
     if (!selectedIC || !selectedSlot) return;
 
     setDispatching(true);
     try {
+      // 1. Assign the slot
       await supabase.from('bps_slots').update({
         status: 'ASSIGNED',
         assigned_ic_id: selectedIC.ic_id,
@@ -46,9 +25,10 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
         zoom_link: zoomLinkInput || selectedSlot.zoom_link
       }).eq('id', selectedSlot.id);
 
+      // 2. Mark IC as BUSY
       await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', selectedIC.ic_id);
-      
-      // FIX: Remove them from the queue table immediately
+
+      // 3. EXPLICIT QUEUE CLEANUP
       await supabase.from('queue_entries').delete().eq('ic_id', selectedIC.ic_id);
 
       setShowConfirmModal(false);
