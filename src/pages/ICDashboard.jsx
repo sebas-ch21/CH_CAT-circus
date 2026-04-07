@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
-import { CircleCheck as CheckCircle2, Loader, Info, XCircle, Video, Clock } from 'lucide-react';
+import { CircleCheck as CheckCircle2, Loader, Info, XCircle, Video, Clock, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -10,21 +10,19 @@ export function ICDashboard() {
   const [assignment, setAssignment] = useState(null);
   const [inQueue, setInQueue] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes 
+  const [actionLoading, setActionLoading] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(300); // 5 mins visual timer
   const [profileTier, setProfileTier] = useState(3);
 
   const checkStatus = useCallback(async () => {
-    if (!user?.id || loading || confirming) return; 
+    if (!user?.id || loading || actionLoading) return; 
     try {
       // 1. SELF-HEALING ARCHITECTURE: ALWAYS check for active assignment first
-      const { data: slotData, error: slotError } = await supabase.from('bps_slots')
+      const { data: slotData } = await supabase.from('bps_slots')
         .select('*')
         .eq('assigned_ic_id', user.id)
         .in('status', ['ASSIGNED', 'CONFIRMED'])
         .limit(1);
-      
-      if (slotError) console.error("Slot fetch error:", slotError);
       
       const activeAssignment = slotData?.[0] || null;
       setAssignment(activeAssignment);
@@ -46,28 +44,23 @@ export function ICDashboard() {
     } catch (error) {
       console.error('Error checking status:', error);
     }
-  }, [user?.id, loading, confirming]);
+  }, [user?.id, loading, actionLoading]);
 
-  // Fast Polling to prevent Race Conditions
+  // Fast Polling
   useEffect(() => {
     checkStatus();
     const interval = setInterval(checkStatus, 3000); 
     return () => clearInterval(interval);
   }, [checkStatus]);
 
-  // 5-Minute Countdown Timer
+  // Purely Visual 5-Minute Timer (Server handles actual timeout)
   useEffect(() => {
     if (assignment?.status === 'ASSIGNED' && assignment.assigned_at) {
+      const assignedTime = new Date(assignment.assigned_at).getTime();
       const timer = setInterval(() => {
-        const assignedTime = new Date(assignment.assigned_at).getTime();
         const now = new Date().getTime();
-        const diffInSeconds = Math.floor((300000 - (now - assignedTime)) / 1000); // 5 mins
-        if (diffInSeconds <= 0) {
-          setAssignment(null);
-          setTimeLeft(0);
-        } else {
-          setTimeLeft(diffInSeconds);
-        }
+        const diffInSeconds = Math.floor((300000 - (now - assignedTime)) / 1000); 
+        setTimeLeft(diffInSeconds > 0 ? diffInSeconds : 0);
       }, 1000);
       return () => clearInterval(timer);
     }
@@ -91,20 +84,34 @@ export function ICDashboard() {
   };
 
   const handleConfirmReceipt = async () => {
-    if (confirming || !assignment) return;
-    setConfirming(true);
+    if (actionLoading || !assignment) return;
+    setActionLoading(true);
     try {
-      // Log for statistics
+      // 1. Log for statistics
       await supabase.from('dispatch_logs').insert([{
         ic_id: user.id, ic_email: user.email, tier_rank: profileTier,
         manager_email: assignment.host_manager || 'Unknown',
         patient_identifier: assignment.patient_identifier, start_time: assignment.start_time
       }]);
-
+      // 2. Lock the match
       await supabase.from('bps_slots').update({ status: 'CONFIRMED' }).eq('id', assignment.id);
       toast.success('Match Confirmed!');
       await checkStatus();
-    } catch (error) { toast.error('Failed to confirm match.'); } finally { setConfirming(false); }
+    } catch (error) { toast.error('Failed to confirm match.'); } finally { setActionLoading(false); }
+  };
+
+  const handleRejectAssignment = async () => {
+    if (actionLoading || !assignment) return;
+    setActionLoading(true);
+    try {
+      // 1. Kick the slot back to OPEN
+      await supabase.from('bps_slots').update({ status: 'OPEN', assigned_ic_id: null, assigned_at: null }).eq('id', assignment.id);
+      // 2. Automatically put the IC back in the queue
+      await supabase.from('queue_entries').insert([{ ic_id: user.id, entered_at: new Date().toISOString() }]);
+      await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', user.id);
+      toast.success('Assignment rejected. Re-entered queue.');
+      await checkStatus();
+    } catch (error) { toast.error('Failed to reject assignment.'); } finally { setActionLoading(false); }
   };
 
   const formatMinutes = (seconds) => {
@@ -130,9 +137,14 @@ export function ICDashboard() {
                 <div><p className="text-xs text-green-700 font-bold uppercase tracking-widest mb-1">Meeting Time</p><p className="text-lg font-bold text-green-900">{new Date(assignment.start_time).toLocaleString()}</p></div>
               </div>
             </div>
-            <button onClick={handleConfirmReceipt} disabled={confirming || timeLeft <= 0} className="w-full bg-[#059669] hover:bg-[#047857] text-white font-bold py-6 px-6 rounded-2xl text-xl transition-all flex items-center justify-center gap-3 shadow-lg">
-              {confirming ? <><Loader className="w-6 h-6 animate-spin" />Confirming...</> : 'Accept & View Zoom Link'}
-            </button>
+            <div className="space-y-3">
+              <button onClick={handleConfirmReceipt} disabled={actionLoading || timeLeft <= 0} className="w-full bg-[#059669] hover:bg-[#047857] text-white font-bold py-5 px-6 rounded-2xl text-xl transition-all flex items-center justify-center gap-3 shadow-lg">
+                {actionLoading ? <><Loader className="w-6 h-6 animate-spin" />Confirming...</> : 'Accept & View Zoom Link'}
+              </button>
+              <button onClick={handleRejectAssignment} disabled={actionLoading} className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-4 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-2 shadow-sm">
+                <X className="w-5 h-5" /> Reject & Return to Queue
+              </button>
+            </div>
           </div>
         </div>
       </div>
