@@ -31,7 +31,8 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
    * Steps:
    * 1. Update slot status to ASSIGNED with IC assignment and timestamp
    * 2. Update IC profile status to BUSY
-   * 3. Trigger callback to refresh data
+   * 3. CRITICAL: Delete IC from the queue so they aren't stuck!
+   * 4. Trigger callback to refresh data
    */
   const executeDispatch = async () => {
     if (!selectedIC || !selectedSlot) return;
@@ -46,6 +47,9 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
       }).eq('id', selectedSlot.id);
 
       await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', selectedIC.ic_id);
+      
+      // FIX: Remove them from the queue table immediately
+      await supabase.from('queue_entries').delete().eq('ic_id', selectedIC.ic_id);
 
       setShowConfirmModal(false);
       onDispatchComplete();
