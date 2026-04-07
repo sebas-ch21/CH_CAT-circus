@@ -5,33 +5,13 @@ import { supabase } from '../lib/supabase';
  * useDispatchData Hook
  *
  * Manages real-time dispatch data including queue entries, open slots, and scheduled slots.
- * Implements the automated sweeper to clear stale queue entries (25 min) and missed assignments (5 min).
- *
- * Critical Features:
- * - 30-second interval for fetching data and running sweeper
- * - Priority-based queue sorting (tier_rank ascending, then entered_at ascending)
- * - Automated cleanup of expired queue entries and pending confirmations
- *
- * @returns {Object} Dispatch data and fetch function
- * @property {Array} queue - Sorted queue entries with profile data
- * @property {Array} openSlots - Available slots for today
- * @property {Array} scheduledSlots - Assigned/confirmed slots for today
- * @property {Function} fetchData - Manual trigger to refresh all data
+ * Implements the automated sweeper to clear stale entries and perform Midnight PST cleanup.
  */
 export function useDispatchData() {
   const [queue, setQueue] = useState([]);
   const [openSlots, setOpenSlots] = useState([]);
   const [scheduledSlots, setScheduledSlots] = useState([]);
 
-  /**
-   * Automated Sweeper - Runs every 30 seconds
-   *
-   * Sweeps:
-   * 1. Queue entries older than 25 minutes -> Delete + Set IC to AVAILABLE
-   * 2. Pending confirmations (ASSIGNED status) older than 5 minutes -> Set slot to OPEN + Set IC to AVAILABLE
-   *
-   * This is critical business logic and must remain exactly as-is.
-   */
   const runAutomatedSweeper = async () => {
     const now = new Date().getTime();
 
@@ -67,15 +47,32 @@ export function useDispatchData() {
         await supabase.from('profiles').update({ current_status: 'AVAILABLE' }).in('id', icIds);
       }
     }
+
+    // Sweep 3: Midnight PST Cleanup
+    // Calculates exact Midnight PST relative to UTC to delete yesterday's unassigned OPEN slots
+    const getPSTMidnightISO = () => {
+      const date = new Date();
+      const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+      const tzDate = new Date(date.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+      const offset = utcDate.getTime() - tzDate.getTime();
+      
+      tzDate.setHours(0, 0, 0, 0); // Set to midnight local PST
+      return new Date(tzDate.getTime() + offset).toISOString();
+    };
+
+    const pstMidnight = getPSTMidnightISO();
+    
+    const { data: staleSlots } = await supabase
+      .from('bps_slots')
+      .select('id')
+      .eq('status', 'OPEN')
+      .lt('start_time', pstMidnight);
+
+    if (staleSlots && staleSlots.length > 0) {
+      await supabase.from('bps_slots').delete().in('id', staleSlots.map(s => s.id));
+    }
   };
 
-  /**
-   * Fetches all dispatch-related data
-   *
-   * Queue: Sorted by tier_rank (ascending), then entered_at (ascending)
-   * Open Slots: Today's slots with status = 'OPEN'
-   * Scheduled Slots: Today's slots with status = 'ASSIGNED' or 'CONFIRMED'
-   */
   const fetchData = async () => {
     // Fetch queue with profile data
     const { data: qData } = await supabase
@@ -84,7 +81,6 @@ export function useDispatchData() {
       .order('entered_at');
 
     if (qData) {
-      // Apply priority sorting: Tier 1 first, then by time
       setQueue(
         qData.sort((a, b) => {
           const tA = a.profiles?.tier_rank || 3;
