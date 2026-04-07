@@ -1,91 +1,81 @@
-import { CircleCheck as CheckCircle2 } from 'lucide-react';
+import { Loader } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useState } from 'react';
+import toast from 'react-hot-toast';
 
-/**
- * ScheduledMatchesTable Component
- *
- * Displays today's confirmed and pending (assigned) matches in a table format.
- *
- * @param {Object} props
- * @param {Array} props.scheduledSlots - Array of assigned/confirmed slots
- * @param {Function} props.getDualTimes - Helper to format BPS/OF times
- * @param {string} props.timeZone - Selected timezone
- */
-export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone }) {
+export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, onDataChange }) {
+  const [processingId, setProcessingId] = useState(null);
+
+  const handleSendBackToQueue = async (slot) => {
+    setProcessingId(slot.id);
+    try {
+      const icId = slot.assigned_ic_id;
+      // 1. Kick slot back to OPEN
+      await supabase.from('bps_slots').update({ status: 'OPEN', assigned_ic_id: null, assigned_at: null }).eq('id', slot.id);
+      // 2. Put IC back in queue
+      if (icId) {
+        await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', icId);
+        await supabase.from('queue_entries').insert([{ ic_id: icId, entered_at: new Date().toISOString() }]);
+      }
+      toast.success('Assignment Cancelled. IC returned to queue.');
+      if (onDataChange) onDataChange();
+    } catch (error) {
+      toast.error('Failed to cancel assignment.');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex-1">
-      <h2 className="text-xl font-bold text-[#0F172A] mb-6 flex items-center gap-2">
-        <CheckCircle2 className="w-6 h-6 text-green-500" /> Today's Matches
-      </h2>
+    <div className="overflow-x-auto border border-gray-100 rounded-xl">
+      <table className="w-full text-left border-collapse">
+        <thead>
+          <tr className="bg-gray-50 border-b-2 border-gray-200">
+            <th className="p-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Status / Action</th>
+            <th className="p-4 text-[10px] font-bold text-[#5E4791] uppercase tracking-widest">OF Time</th>
+            <th className="p-4 text-[10px] font-bold text-[#0F172A] uppercase tracking-widest">Room ID</th>
+            <th className="p-4 text-[10px] font-bold text-[#007C8C] uppercase tracking-widest">Assigned Staff</th>
+          </tr>
+        </thead>
+        <tbody>
+          {scheduledSlots.length === 0 ? (
+            <tr><td colSpan="4" className="p-12 text-center text-gray-400 font-medium border-2 border-dashed border-gray-200 bg-gray-50/50">No matches confirmed today.</td></tr>
+          ) : (
+            scheduledSlots.map(slot => {
+              const times = getDualTimes(slot.start_time, timeZone);
+              const isProcessing = processingId === slot.id;
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b-2 border-gray-200 bg-gray-50">
-              <th className="p-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                Status
-              </th>
-              <th className="p-4 text-[10px] font-bold text-[#5E4791] uppercase tracking-widest">
-                OF Time
-              </th>
-              <th className="p-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                BPS Time
-              </th>
-              <th className="p-4 text-[10px] font-bold text-[#0F172A] uppercase tracking-widest">
-                Room ID
-              </th>
-              <th className="p-4 text-[10px] font-bold text-[#007C8C] uppercase tracking-widest">
-                Assigned Staff
-              </th>
-              <th className="p-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                OF Host
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {scheduledSlots.length === 0 ? (
-              <tr>
-                <td
-                  colSpan="6"
-                  className="p-12 text-center text-gray-400 font-medium border-2 border-dashed border-gray-200 rounded-xl mt-4"
-                >
-                  No slots scheduled yet today.
-                </td>
-              </tr>
-            ) : (
-              scheduledSlots.map(slot => {
-                const times = getDualTimes(slot.start_time, timeZone);
-                return (
-                  <tr
-                    key={slot.id}
-                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                  >
-                    <td className="p-4">
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-md ${
-                          slot.status === 'CONFIRMED'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-yellow-100 text-yellow-700'
-                        }`}
-                      >
-                        {slot.status === 'ASSIGNED' ? 'PENDING (5m)' : 'CONFIRMED'}
+              return (
+                <tr key={slot.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                  <td className="p-4">
+                    {slot.status === 'ASSIGNED' ? (
+                      <div className="flex items-center gap-3">
+                        <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-md border bg-yellow-50 text-yellow-700 border-yellow-200">
+                          PENDING (30m)
+                        </span>
+                        <button 
+                          onClick={() => handleSendBackToQueue(slot)} 
+                          disabled={isProcessing}
+                          className="px-3 py-1.5 bg-white hover:bg-red-50 text-red-600 text-xs font-bold rounded-lg border-2 border-gray-200 hover:border-red-200 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                        >
+                          {isProcessing ? <Loader className="w-3 h-3 animate-spin"/> : 'Cancel & Re-Queue'}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-md border bg-green-50 text-green-700 border-green-200">
+                        CONFIRMED
                       </span>
-                    </td>
-                    <td className="p-4 font-black text-[#5E4791]">{times.of}</td>
-                    <td className="p-4 font-bold text-gray-400">{times.bps}</td>
-                    <td className="p-4 font-black text-[#0F172A]">{slot.patient_identifier}</td>
-                    <td className="p-4 font-bold text-[#007C8C]">
-                      {slot.profiles?.email?.split('@')[0] || 'Unknown'}
-                    </td>
-                    <td className="p-4 font-bold text-gray-600">
-                      {slot.host_manager?.split('@')[0] || 'Unassigned'}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                    )}
+                  </td>
+                  <td className="p-4 font-black text-[#5E4791]">{times.of}</td>
+                  <td className="p-4 font-black text-[#0F172A]">{slot.patient_identifier}</td>
+                  <td className="p-4 font-bold text-[#007C8C]">{slot.profiles?.email?.split('@')[0] || 'Unknown'}</td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
