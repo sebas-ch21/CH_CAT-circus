@@ -9,7 +9,7 @@ export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, 
   const handleSendBackToQueue = async (slot) => {
     setProcessingId(slot.id);
     try {
-      // ATOMIC TRANSACTION: Revokes the slot, sets IC back to queue, handles everything.
+      // ONE ATOMIC CALL: Resets the slot and cleanly sets the IC back into the queue.
       const { error } = await supabase.rpc('reject_or_cancel_match', {
         p_slot_id: slot.id,
         p_ic_id: slot.assigned_ic_id
