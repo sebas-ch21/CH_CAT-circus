@@ -1,85 +1,106 @@
-import { createContext, useState, useContext, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
-const AuthContext = createContext();
-
-export { AuthContext };
+const AuthContext = createContext({});
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isPinVerified, setIsPinVerified] = useState(false); // Tracks if the user passed the PIN screen
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('clinicalUser');
-    if (storedUser) setUser(JSON.parse(storedUser));
-    setLoading(false);
+    checkSession();
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        await verifyAgainstRoster(session.user.email, session.user);
+      } else {
+        const testUser = localStorage.getItem('charlie_test_user');
+        if (!testUser) {
+          setUser(null);
+        }
+      }
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = async (email) => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.from('profiles').select('*').eq('email', email).maybeSingle();
-      if (error) throw error;
-      if (data) {
-        localStorage.setItem('clinicalUser', JSON.stringify(data));
-        setUser(data);
-        return { success: true, user: data };
-      } else {
-        return { success: false, error: 'User not in system, reach out to Clinical Admissions Leadership' };
+  const checkSession = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      await verifyAgainstRoster(session.user.email, session.user);
+    } else {
+      const testUser = localStorage.getItem('charlie_test_user');
+      if (testUser) {
+        setUser(JSON.parse(testUser));
       }
-    } catch (error) {
-      return { success: false, error: error.message };
-    } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('clinicalUser');
-    setUser(null);
-    setIsPinVerified(false); // Lock the screens again on logout
-  };
+  const verifyAgainstRoster = async (email, authUser = null) => {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
 
-  const verifyPin = async (inputPin, requiredRole) => {
-    // 1. Determine which PIN we are checking for
-    const key = requiredRole === 'ADMIN' ? 'admin_pin' : 'manager_pin';
-    const fallbackPin = requiredRole === 'ADMIN' ? 'charlieadmin' : 'charliemanager';
-
-    try {
-      // 2. Try to get the custom PIN from the database
-      const { data, error } = await supabase
-        .from('app_settings')
-        .select('setting_value')
-        .eq('setting_key', key)
-        .maybeSingle();
-
-      const correctPin = data?.setting_value || fallbackPin;
-
-      // 3. Check if it matches
-      if (inputPin === correctPin) {
-        setIsPinVerified(true);
-        return { success: true };
-      }
-      return { success: false, error: 'Incorrect PIN' };
+    if (profile) {
+      const sessionUser = authUser ? { ...authUser, ...profile } : profile;
+      setUser(sessionUser);
       
-    } catch (err) {
-      // 4. FAIL-SAFE: If the database table doesn't exist yet, use the hardcoded defaults
-      if (inputPin === fallbackPin) {
-        setIsPinVerified(true);
-        return { success: true };
+      if (!authUser) {
+        localStorage.setItem('charlie_test_user', JSON.stringify(sessionUser));
       }
-      return { success: false, error: 'Incorrect PIN' };
+    } else {
+      if (authUser) await supabase.auth.signOut();
+      setUser(null);
+      localStorage.removeItem('charlie_test_user');
     }
   };
 
+  const loginWithMagicLink = async (email) => {
+    const { error } = await supabase.auth.signInWithOtp({ 
+      email,
+      options: { emailRedirectTo: window.location.origin }
+    });
+    if (error) throw error;
+  };
+
+  const loginWithPin = async (email, pin) => {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (!profile) throw new Error('Email not found in the roster.');
+
+    const { data: settings } = await supabase.from('app_settings').select('*');
+    const adminPin = settings.find(s => s.setting_key === 'admin_pin')?.setting_value || 'charlieadmin';
+    const managerPin = settings.find(s => s.setting_key === 'manager_pin')?.setting_value || 'charliemanager';
+
+    let isValid = false;
+    if (profile.role === 'ADMIN' && pin === adminPin) isValid = true;
+    else if (profile.role === 'MANAGER' && pin === managerPin) isValid = true;
+    else if (profile.role === 'IC') isValid = true; 
+
+    if (!isValid) throw new Error('Invalid PIN for this role.');
+
+    await verifyAgainstRoster(email);
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem('charlie_test_user');
+    setUser(null);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, isPinVerified, login, logout, verifyPin }}>
-      {children}
+    <AuthContext.Provider value={{ user, loginWithMagicLink, loginWithPin, logout, loading }}>
+      {!loading && children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth() {
-  return useContext(AuthContext);
-}
+export const useAuth = () => useContext(AuthContext);
