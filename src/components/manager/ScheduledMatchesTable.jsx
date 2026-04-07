@@ -9,21 +9,19 @@ export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, 
   const handleSendBackToQueue = async (slot) => {
     setProcessingId(slot.id);
     try {
-      const icId = slot.assigned_ic_id;
+      // THE FIX: One single atomic call to the Database RPC to revoke the match.
+      const { error } = await supabase.rpc('reject_or_cancel_match', {
+        p_slot_id: slot.id,
+        p_ic_id: slot.assigned_ic_id
+      });
       
-      // 1. Kick slot back to OPEN
-      await supabase.from('bps_slots').update({ status: 'OPEN', assigned_ic_id: null, assigned_at: null }).eq('id', slot.id);
+      if (error) throw error;
       
-      // 2. Put IC back in queue via Profile State Machine
-      if (icId) {
-        await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', icId);
-        await supabase.from('queue_entries').insert([{ ic_id: icId, entered_at: new Date().toISOString() }]).catch(()=>{});
-      }
-      
-      toast.success('Assignment Cancelled. IC returned to queue.');
+      toast.success('Assignment Revoked. IC returned to queue.');
       if (onDataChange) onDataChange();
     } catch (error) {
       toast.error('Failed to cancel assignment.');
+      console.error(error);
     } finally {
       setProcessingId(null);
     }
