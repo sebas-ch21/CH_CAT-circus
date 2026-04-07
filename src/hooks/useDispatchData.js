@@ -7,36 +7,30 @@ export function useDispatchData() {
   const [scheduledSlots, setScheduledSlots] = useState([]);
 
   const fetchData = useCallback(async () => {
-    try {
-      // 1. TRIGGER SERVER-SIDE CLEANUP
-      // This instantly drops 5-min expired assignments and deletes 12-hour old midnight slots safely.
-      await supabase.rpc('cleanup_stale_data').catch(err => console.error("Cleanup RPC Error:", err));
+    // 1. TRIGGER SAFE BACKEND CLEANUP (Non-blocking)
+    supabase.rpc('cleanup_stale_data').catch(err => console.error("Cleanup RPC Error:", err));
 
-      // 2. FETCH ALL PROFILES (Bulletproof in-memory mapping to prevent Supabase JOIN errors)
+    // 2. FETCH PROFILES (For safe in-memory mapping)
+    let profileMap = {};
+    try {
       const { data: allProfiles } = await supabase.from('profiles').select('*');
-      const profileMap = {};
       if (allProfiles) {
         allProfiles.forEach(p => { profileMap[p.id] = p; });
       }
+    } catch (err) {
+      console.warn("Profiles fetch warning:", err);
+    }
 
-      // 3. FETCH AND ENRICH QUEUE
-      const { data: qData } = await supabase.from('queue_entries').select('*').order('entered_at');
-      if (qData) {
-        const enrichedQueue = qData.map(q => ({
-          ...q,
-          profiles: profileMap[q.ic_id] || {}
-        }));
-        
-        // Strict State: Only show users who are legitimately waiting in the queue
-        const activeQueue = enrichedQueue.filter(q => q.profiles.current_status === 'IN_QUEUE');
-        setQueue(activeQueue.sort((a, b) => (a.profiles.tier_rank || 3) - (b.profiles.tier_rank || 3) || new Date(a.entered_at) - new Date(b.entered_at)));
-      }
-
-      // 4. FETCH OPEN SLOTS
+    // 3. FETCH OPEN SLOTS (Isolated)
+    try {
       const { data: oSlots } = await supabase.from('bps_slots').select('*').eq('status', 'OPEN').order('start_time');
       if (oSlots) setOpenSlots(oSlots);
+    } catch (err) {
+      console.error("Open Slots fetch error:", err);
+    }
 
-      // 5. FETCH SCHEDULED SLOTS
+    // 4. FETCH SCHEDULED SLOTS (Isolated & safely mapped)
+    try {
       const { data: sSlots } = await supabase.from('bps_slots').select('*').in('status', ['ASSIGNED', 'CONFIRMED']).order('start_time');
       if (sSlots) {
         const mappedSlots = sSlots.map(slot => ({
@@ -47,15 +41,31 @@ export function useDispatchData() {
         setScheduledSlots(mappedSlots);
       }
     } catch (err) {
-      console.error('Data Fetch Error:', err);
+      console.error("Scheduled Slots fetch error:", err);
+    }
+
+    // 5. FETCH QUEUE (Isolated & safely mapped)
+    try {
+      const { data: qData } = await supabase.from('queue_entries').select('*').order('entered_at');
+      if (qData) {
+        const enrichedQueue = qData.map(q => ({
+          ...q,
+          // Fallback ensures ICs don't vanish if there's a weird data sync issue
+          profiles: profileMap[q.ic_id] || { current_status: 'IN_QUEUE', tier_rank: 3, email: 'Unknown' }
+        }));
+        
+        // Strict State: Only show users actively waiting
+        const activeQueue = enrichedQueue.filter(q => q.profiles.current_status === 'IN_QUEUE');
+        setQueue(activeQueue.sort((a, b) => (a.profiles.tier_rank || 3) - (b.profiles.tier_rank || 3) || new Date(a.entered_at) - new Date(b.entered_at)));
+      }
+    } catch (err) {
+      console.error("Queue fetch error:", err);
     }
   }, []);
 
   useEffect(() => {
     fetchData();
-    
-    // Smooth, read-only polling every 3 seconds. 
-    // No destructive React logic runs here anymore.
+    // Smooth, read-only polling every 3 seconds.
     const interval = setInterval(() => { fetchData(); }, 3000); 
     return () => clearInterval(interval);
   }, [fetchData]);
