@@ -8,12 +8,12 @@ export function useDispatchData() {
 
   const fetchData = useCallback(async () => {
     try {
-      // 1. TRIGGER SERVER-SIDE CLEANUP (Replaces browser time-math)
-      // This instantly drops 5-min expired assignments and deletes 12-hour old midnight slots.
+      // 1. TRIGGER SERVER-SIDE CLEANUP
+      // This instantly drops 5-min expired assignments and deletes 12-hour old midnight slots safely.
       await supabase.rpc('cleanup_stale_data').catch(err => console.error("Cleanup RPC Error:", err));
 
-      // 2. FETCH ALL PROFILES (Bulletproof in-memory join to prevent Supabase relationship errors)
-      const { data: allProfiles } = await supabase.from('profiles').select('id, email, tier_rank, current_status');
+      // 2. FETCH ALL PROFILES (Bulletproof in-memory mapping to prevent Supabase JOIN errors)
+      const { data: allProfiles } = await supabase.from('profiles').select('*');
       const profileMap = {};
       if (allProfiles) {
         allProfiles.forEach(p => { profileMap[p.id] = p; });
