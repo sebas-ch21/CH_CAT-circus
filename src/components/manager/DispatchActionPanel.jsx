@@ -26,8 +26,9 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
       }).eq('id', selectedSlot.id);
       if (slotErr) throw slotErr;
 
-      // 2. Set IC to busy locally (The IC app will delete its own queue row securely)
-      await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', selectedIC.ic_id);
+      // 2. State Machine Update: Set IC to PENDING_MATCH
+      // This instantly removes them from the Manager's queue view and triggers the IC Dashboard logic
+      await supabase.from('profiles').update({ current_status: 'PENDING_MATCH' }).eq('id', selectedIC.ic_id);
 
       toast.success('Dispatched! Awaiting IC Confirmation.');
       setShowConfirmModal(false);
