@@ -18,9 +18,9 @@ export function useDispatchData() {
       await supabase.from('profiles').update({ current_status: 'AVAILABLE' }).in('id', icIds);
     }
 
-    // 2. Clear 5-MINUTE missed assignments (Pending Timeout)
-    const fiveMinsAgo = new Date(now - 5 * 60000).toISOString();
-    const { data: expiredS } = await supabase.from('bps_slots').select('*').eq('status', 'ASSIGNED').lt('assigned_at', fiveMinsAgo);
+    // 2. Clear 30-MINUTE missed assignments (Pending Timeout)
+    const thirtyMinsAgo = new Date(now - 30 * 60000).toISOString();
+    const { data: expiredS } = await supabase.from('bps_slots').select('*').eq('status', 'ASSIGNED').lt('assigned_at', thirtyMinsAgo);
     if (expiredS?.length > 0) {
       const slotIds = expiredS.map(s => s.id);
       const icIds = expiredS.map(s => s.assigned_ic_id).filter(Boolean);
@@ -45,26 +45,20 @@ export function useDispatchData() {
   const fetchData = useCallback(async () => {
     try {
       // Fetch Queue
-      const { data: qData, error: qError } = await supabase.from('queue_entries').select('*, profiles(email, tier_rank, current_status)').order('entered_at');
-      if (qError) console.error("Queue Fetch Error:", qError);
+      const { data: qData } = await supabase.from('queue_entries').select('*, profiles(email, tier_rank, current_status)').order('entered_at');
       if (qData) {
         // Optimistically hide ICs that are marked BUSY to prevent UI lag
         const activeQueue = qData.filter(q => q.profiles?.current_status !== 'BUSY');
         setQueue(activeQueue.sort((a, b) => (a.profiles?.tier_rank || 3) - (b.profiles?.tier_rank || 3) || new Date(a.entered_at) - new Date(b.entered_at)));
       }
 
-      // FIX: Wide UTC boundary to ensure timezone shifts don't hide today's slots
-      const startOfToday = new Date(); startOfToday.setHours(-12, 0, 0, 0); 
-      const endOfToday = new Date(); endOfToday.setHours(36, 59, 59, 999);
-
-      // Fetch Open Slots
-      const { data: oSlots, error: oError } = await supabase.from('bps_slots').select('*').eq('status', 'OPEN').gte('start_time', startOfToday.toISOString()).lte('start_time', endOfToday.toISOString()).order('start_time');
-      if (oError) console.error("Open Slots Error:", oError);
+      // We completely removed the strict date boundaries here. 
+      // If a slot is OPEN, ASSIGNED, or CONFIRMED, it belongs on the board until the midnight sweeper kills it.
+      // This permanently stops slots from mysteriously disappearing.
+      const { data: oSlots } = await supabase.from('bps_slots').select('*').eq('status', 'OPEN').order('start_time');
       if (oSlots) setOpenSlots(oSlots);
 
-      // Fetch Scheduled Slots
-      const { data: sSlots, error: sError } = await supabase.from('bps_slots').select('*, profiles(email)').in('status', ['ASSIGNED', 'CONFIRMED']).gte('start_time', startOfToday.toISOString()).lte('start_time', endOfToday.toISOString()).order('start_time');
-      if (sError) console.error("Scheduled Slots Error:", sError);
+      const { data: sSlots } = await supabase.from('bps_slots').select('*, profiles(email)').in('status', ['ASSIGNED', 'CONFIRMED']).order('start_time');
       if (sSlots) setScheduledSlots(sSlots);
     } catch (err) {
       console.error('FetchData Exception:', err);
@@ -73,8 +67,8 @@ export function useDispatchData() {
 
   useEffect(() => {
     fetchData();
-    // Rapid polling to ensure manager and IC screens sync instantly
-    const interval = setInterval(() => { fetchData(); runAutomatedSweeper(); }, 4000); 
+    // Poll aggressively to keep Manager and IC instantly synced
+    const interval = setInterval(() => { fetchData(); runAutomatedSweeper(); }, 3000); 
     return () => clearInterval(interval);
   }, [fetchData]);
 
