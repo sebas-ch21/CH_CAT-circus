@@ -9,14 +9,13 @@ export function ICDashboard() {
   const { user } = useAuth();
   const [assignment, setAssignment] = useState(null);
   const [inQueue, setInQueue] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(300); 
+  const [uiLoading, setUiLoading] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(300); // 5 mins
   const [profileTier, setProfileTier] = useState(3);
 
-  // 100% READ-ONLY DATA FETCHING
+  // Background Polling - No Loading Locks!
   const checkStatus = useCallback(async () => {
-    if (!user?.id || loading || actionLoading) return; 
+    if (!user?.id) return; 
     try {
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       if (profile) setProfileTier(profile.tier_rank);
@@ -26,34 +25,29 @@ export function ICDashboard() {
         .eq('assigned_ic_id', user.id)
         .in('status', ['ASSIGNED', 'CONFIRMED'])
         .limit(1);
+      
       const activeSlot = slotData?.[0] || null;
       setAssignment(activeSlot);
 
-      const { data: queueData } = await supabase.from('queue_entries').select('id').eq('ic_id', user.id);
-      const hasQueueRow = queueData && queueData.length > 0;
-
-      // State Machine Prioritization
+      // State Machine
       if (activeSlot) {
         setInQueue(false);
-      } else {
-        setInQueue(profile?.current_status === 'IN_QUEUE');
-      }
-
-      // --- LAZY SELF-HEALING (Background Cleanup) ---
-      // If Manager assigned a slot but RLS blocked them from deleting the queue row, IC deletes it here.
-      if (activeSlot && hasQueueRow) {
         await supabase.from('queue_entries').delete().eq('ic_id', user.id);
-        if (profile?.current_status !== 'BUSY') await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', user.id);
-      }
-      
-      // If IC is supposed to be in queue, but DB dropped the row, IC re-adds it here.
-      if (!activeSlot && profile?.current_status === 'IN_QUEUE' && !hasQueueRow) {
-        await supabase.from('queue_entries').insert([{ ic_id: user.id, entered_at: new Date().toISOString() }]);
+      } else {
+        if (profile?.current_status === 'IN_QUEUE') {
+          setInQueue(true);
+          const { data: q } = await supabase.from('queue_entries').select('id').eq('ic_id', user.id).limit(1);
+          if (!q || q.length === 0) {
+            await supabase.from('queue_entries').insert([{ ic_id: user.id, entered_at: new Date().toISOString() }]);
+          }
+        } else {
+          setInQueue(false);
+        }
       }
     } catch (error) {
-      console.error('Status Check Error:', error);
+      console.error('Error checking status:', error);
     }
-  }, [user?.id, loading, actionLoading]);
+  }, [user?.id]);
 
   useEffect(() => {
     checkStatus();
@@ -61,7 +55,7 @@ export function ICDashboard() {
     return () => clearInterval(interval);
   }, [checkStatus]);
 
-  // Visual 5-Minute Timer
+  // 5-Minute Timer
   useEffect(() => {
     if (assignment?.status === 'ASSIGNED' && assignment.assigned_at) {
       const assignedTime = new Date(assignment.assigned_at).getTime();
@@ -73,27 +67,26 @@ export function ICDashboard() {
     }
   }, [assignment]);
 
-  // EXPLICIT MUTATIONS
+  // BUTTON ACTIONS
   const handleEnterQueue = async () => {
-    setLoading(true); setInQueue(true); setAssignment(null);
+    setUiLoading(true); setInQueue(true); setAssignment(null);
     try {
       await supabase.from('queue_entries').delete().eq('ic_id', user.id);
       await supabase.from('queue_entries').insert([{ ic_id: user.id, entered_at: new Date().toISOString() }]);
       await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', user.id);
-    } catch (error) { setInQueue(false); toast.error('Failed to enter queue'); } finally { setLoading(false); }
+    } catch (error) { toast.error('Failed to enter queue'); } finally { setUiLoading(false); }
   };
 
   const handleExitQueue = async () => {
-    setLoading(true); setInQueue(false); 
+    setUiLoading(true); setInQueue(false); 
     try {
       await supabase.from('queue_entries').delete().eq('ic_id', user.id);
       await supabase.from('profiles').update({ current_status: 'AVAILABLE' }).eq('id', user.id);
-    } catch (error) { setInQueue(true); } finally { setLoading(false); }
+    } catch (error) { toast.error('Failed to exit queue'); } finally { setUiLoading(false); }
   };
 
   const handleConfirmReceipt = async () => {
-    if (actionLoading || !assignment) return;
-    setActionLoading(true);
+    setUiLoading(true);
     try {
       await supabase.from('dispatch_logs').insert([{
         ic_id: user.id, ic_email: user.email, tier_rank: profileTier,
@@ -104,19 +97,18 @@ export function ICDashboard() {
       await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', user.id);
       toast.success('Match Confirmed!');
       await checkStatus();
-    } catch (error) { toast.error('Failed to confirm match.'); } finally { setActionLoading(false); }
+    } catch (error) { toast.error('Failed to confirm match.'); } finally { setUiLoading(false); }
   };
 
   const handleRejectAssignment = async () => {
-    if (actionLoading || !assignment) return;
-    setActionLoading(true);
+    setUiLoading(true);
     try {
       await supabase.from('bps_slots').update({ status: 'OPEN', assigned_ic_id: null, assigned_at: null }).eq('id', assignment.id);
       await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', user.id);
       await supabase.from('queue_entries').insert([{ ic_id: user.id, entered_at: new Date().toISOString() }]);
       toast.success('Assignment rejected. Re-entered queue.');
       await checkStatus();
-    } catch (error) { toast.error('Failed to reject assignment.'); } finally { setActionLoading(false); }
+    } catch (error) { toast.error('Failed to reject assignment.'); } finally { setUiLoading(false); }
   };
 
   const formatMinutes = (seconds) => {
@@ -124,7 +116,7 @@ export function ICDashboard() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // --- UI RENDER STATE MACHINE ---
+  // --- UI RENDER FLOW ---
   if (assignment && assignment.status === 'ASSIGNED') {
     return (
       <div className="min-h-screen bg-white flex flex-col">
@@ -142,10 +134,10 @@ export function ICDashboard() {
               </div>
             </div>
             <div className="space-y-3">
-              <button onClick={handleConfirmReceipt} disabled={actionLoading || timeLeft <= 0} className="w-full bg-[#059669] hover:bg-[#047857] text-white font-bold py-5 px-6 rounded-2xl text-xl transition-all flex items-center justify-center gap-3 shadow-lg">
-                {actionLoading ? <><Loader className="w-6 h-6 animate-spin" />Confirming...</> : 'Accept & View Zoom Link'}
+              <button onClick={handleConfirmReceipt} disabled={uiLoading || timeLeft <= 0} className="w-full bg-[#059669] hover:bg-[#047857] text-white font-bold py-5 px-6 rounded-2xl text-xl transition-all flex items-center justify-center gap-3 shadow-lg">
+                {uiLoading ? <><Loader className="w-6 h-6 animate-spin" />Confirming...</> : 'Accept & View Zoom Link'}
               </button>
-              <button onClick={handleRejectAssignment} disabled={actionLoading} className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-4 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-2 shadow-sm">
+              <button onClick={handleRejectAssignment} disabled={uiLoading} className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-4 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-2 shadow-sm">
                 <X className="w-5 h-5" /> Reject & Return to Queue
               </button>
             </div>
@@ -173,8 +165,8 @@ export function ICDashboard() {
                 {assignment.zoom_link ? <a href={assignment.zoom_link} target="_blank" rel="noreferrer" className="text-blue-600 font-bold hover:underline break-all">{assignment.zoom_link}</a> : <p className="text-gray-500 italic font-medium">Manager did not provide a link.</p>}
               </div>
             </div>
-            <button onClick={handleEnterQueue} disabled={loading} className="mt-8 w-full bg-[#A890D3] hover:bg-[#8B6FC4] text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all shadow-lg">
-              {loading ? 'Entering Queue...' : 'Patient No-Show: Re-enter Queue'}
+            <button onClick={handleEnterQueue} disabled={uiLoading} className="mt-8 w-full bg-[#A890D3] hover:bg-[#8B6FC4] text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all shadow-lg">
+              {uiLoading ? 'Entering Queue...' : 'Patient No-Show: Re-enter Queue'}
             </button>
           </div>
         </div>
@@ -191,8 +183,8 @@ export function ICDashboard() {
             <div className="flex justify-center mb-4"><CheckCircle2 className="w-24 h-24 text-green-500" /></div>
             <h1 className="text-2xl font-semibold text-gray-900 mb-2">Successfully Entered Queue</h1>
             <p className="text-gray-600 mb-8">Waiting for manager dispatch. Do not close this page.</p>
-            <button onClick={handleExitQueue} disabled={loading} className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-sm">
-              {loading ? <Loader className="w-6 h-6 animate-spin" /> : <><XCircle className="w-6 h-6" /> Exit Queue</>}
+            <button onClick={handleExitQueue} disabled={uiLoading} className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-sm">
+              {uiLoading ? <Loader className="w-6 h-6 animate-spin" /> : <><XCircle className="w-6 h-6" /> Exit Queue</>}
             </button>
           </div>
         </div>
@@ -209,8 +201,8 @@ export function ICDashboard() {
             <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
             <div><h3 className="font-bold text-blue-900 mb-1">IC Mode Instructions</h3><p className="text-sm text-blue-800 font-medium">Click below to enter the reassignment queue when your patient doesn't show up.</p></div>
           </div>
-          <button onClick={handleEnterQueue} disabled={loading} className="w-full bg-[#0F172A] hover:bg-gray-800 text-white font-bold py-10 px-6 rounded-3xl text-xl transition-all shadow-2xl min-h-[160px]">
-            {loading ? <><Loader className="w-8 h-8 animate-spin mx-auto mb-2" /> Entering...</> : 'Enter Reassignment Queue'}
+          <button onClick={handleEnterQueue} disabled={uiLoading} className="w-full bg-[#0F172A] hover:bg-gray-800 text-white font-bold py-10 px-6 rounded-3xl text-xl transition-all shadow-2xl min-h-[160px]">
+            {uiLoading ? <><Loader className="w-8 h-8 animate-spin mx-auto mb-2" /> Entering...</> : 'Enter Reassignment Queue'}
           </button>
         </div>
       </div>
