@@ -17,7 +17,7 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
     if (!selectedIC || !selectedSlot) return;
     setDispatching(true);
     try {
-      // ATOMIC TRANSACTION: The database handles the slot, profile, and queue cleanup safely.
+      // ONE ATOMIC CALL: The database securely handles the slot, the profile, and the queue cleanup.
       const { error } = await supabase.rpc('manager_dispatch_ic', {
         p_slot_id: selectedSlot.id,
         p_ic_id: selectedIC.ic_id,
@@ -28,6 +28,8 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
 
       toast.success('Dispatched! Awaiting IC Confirmation.');
       setShowConfirmModal(false);
+      
+      // Force UI sync
       if (onDispatchComplete) onDispatchComplete();
     } catch (error) {
       toast.error('Dispatch failed.');
