@@ -1,65 +1,29 @@
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Shield, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { LogOut, User as UserIcon } from 'lucide-react';
 
 export function TopNav() {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-  };
-
-  const canAccessAdmin = user?.role === 'ADMIN';
-  const canAccessManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
-
-  const getNavClass = (path) => {
-    const isActive = location.pathname === path;
-    return `px-4 py-2 text-sm transition-all rounded-lg ${
-      isActive
-        ? 'bg-gray-200 text-gray-900 font-bold shadow-sm'
-        : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
-    }`;
-  };
+  
+  // Do not show the nav bar on the Login screen
+  if (!user) return null;
 
   return (
-    <nav className="bg-white border-b border-gray-200 sticky top-0 z-10">
-      <div className="max-w-7xl mx-auto px-6 py-4">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              {/* Changed to Deep Navy to match brand */}
-              <Shield className="w-7 h-7 text-[#0F172A]" strokeWidth={2.5} />
-              <h1 className="text-xl font-semibold text-[#0F172A]">Charlie Admissions</h1>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {canAccessAdmin && (
-                <button onClick={() => navigate('/admin')} className={getNavClass('/admin')}>
-                  Admin Mode
-                </button>
-              )}
-              {canAccessManager && (
-                <button onClick={() => navigate('/manager')} className={getNavClass('/manager')}>
-                  Manager Mode
-                </button>
-              )}
-              <button onClick={() => navigate('/dashboard')} className={getNavClass('/dashboard')}>
-                IC Mode
-              </button>
-            </div>
-          </div>
-
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition"
-          >
-            <LogOut className="w-5 h-5" />
-            <span>Logout</span>
-          </button>
+    <nav className="bg-[#0F172A] text-white px-6 py-4 flex justify-between items-center shadow-md w-full relative z-50">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 bg-[#5E4791] rounded-lg flex items-center justify-center font-bold text-lg shadow-sm">C</div>
+        <span className="font-black text-lg tracking-wide hidden sm:block">Charlie Admissions</span>
+      </div>
+      
+      <div className="flex items-center gap-6">
+        <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-xl border border-white/5 shadow-inner">
+          <UserIcon className="w-4 h-4 text-purple-300" />
+          <span className="text-sm font-bold tracking-wide">{user.email?.split('@')[0]}</span>
+          <span className="text-[10px] uppercase tracking-widest bg-[#5E4791] px-2 py-1 rounded-md ml-2 font-black shadow-sm">{user.role}</span>
         </div>
+        
+        <button onClick={logout} className="text-sm font-bold text-gray-300 hover:text-white flex items-center gap-2 transition-colors px-3 py-2 rounded-lg hover:bg-white/10">
+          <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Logout</span>
+        </button>
       </div>
     </nav>
   );
