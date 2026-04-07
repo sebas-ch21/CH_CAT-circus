@@ -14,8 +14,7 @@ export function Login() {
   const { user, loginWithMagicLink, loginWithPin } = useAuth();
   const navigate = useNavigate();
 
-  // FIX: Redirection Logic
-  // As soon as 'user' becomes populated (login successful), route them to the dashboard!
+  // FIX: Redirect the user to their specific dashboard as soon as they log in
   useEffect(() => {
     if (user) {
       if (user.role === 'ADMIN') navigate('/admin');
@@ -31,10 +30,8 @@ export function Login() {
 
     try {
       if (usePin) {
-        // Call the new, working loginWithPin function from the Context
         await loginWithPin(email, pin);
       } else {
-        // Call the new, working loginWithMagicLink function from the Context
         await loginWithMagicLink(email);
         setSuccess(true);
       }
@@ -57,8 +54,8 @@ export function Login() {
         </p>
       </div>
 
-      <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-10 px-8 shadow-2xl rounded-3xl border border-gray-100">
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-8 shadow-2xl rounded-3xl border border-gray-100">
           <p className="text-center text-gray-600 font-medium mb-8">
             Please sign in using your company email to continue.
           </p>
@@ -99,16 +96,16 @@ export function Login() {
               )}
 
               {error && (
-                <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 text-sm font-bold rounded-xl text-center">
+                <div className="p-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl text-center border border-red-100">
                   {error}
                 </div>
               )}
 
               <button
                 type="submit" disabled={loading}
-                className="w-full flex items-center justify-center gap-3 py-4 px-6 bg-[#0F172A] rounded-2xl text-white font-bold hover:bg-gray-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
+                className="w-full py-4 rounded-xl font-black text-white bg-[#0F172A] hover:bg-gray-800 transition-all shadow-lg flex justify-center items-center gap-2"
               >
-                {loading ? <Loader className="w-6 h-6 animate-spin" /> : (usePin ? 'Login with PIN' : 'Send Magic Link')}
+                {loading ? <Loader className="w-5 h-5 animate-spin" /> : (usePin ? 'Login with PIN' : 'Send Magic Link')}
               </button>
             </form>
           )}
@@ -117,7 +114,7 @@ export function Login() {
             <button 
               onClick={() => setUsePin(!usePin)} 
               type="button"
-              className="mt-8 w-full text-center text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors flex items-center justify-center gap-2"
+              className="mt-6 w-full text-center text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors flex items-center justify-center gap-2"
             >
               <KeyRound className="w-4 h-4" /> {usePin ? 'Switch to Magic Link' : 'Test User? Login with PIN'}
             </button>
