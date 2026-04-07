@@ -9,14 +9,15 @@ export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, 
   const handleSendBackToQueue = async (slot) => {
     setProcessingId(slot.id);
     try {
+      const icId = slot.assigned_ic_id;
+      
       // 1. Kick slot back to OPEN
       await supabase.from('bps_slots').update({ status: 'OPEN', assigned_ic_id: null, assigned_at: null }).eq('id', slot.id);
       
-      // 2. Put IC back in queue via Profile Status
-      if (slot.assigned_ic_id) {
-        await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', slot.assigned_ic_id);
-        // Best effort explicit queue insert
-        await supabase.from('queue_entries').insert([{ ic_id: slot.assigned_ic_id, entered_at: new Date().toISOString() }]).catch(()=>{});
+      // 2. Put IC back in queue via Profile State Machine
+      if (icId) {
+        await supabase.from('profiles').update({ current_status: 'IN_QUEUE' }).eq('id', icId);
+        await supabase.from('queue_entries').insert([{ ic_id: icId, entered_at: new Date().toISOString() }]).catch(()=>{});
       }
       
       toast.success('Assignment Cancelled. IC returned to queue.');
@@ -41,7 +42,7 @@ export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, 
         </thead>
         <tbody>
           {scheduledSlots.length === 0 ? (
-            <tr><td colSpan="4" className="p-12 text-center text-gray-400 font-medium border-2 border-dashed border-gray-200 bg-gray-50/50">No matches confirmed.</td></tr>
+            <tr><td colSpan="4" className="p-12 text-center text-gray-400 font-medium border-2 border-dashed border-gray-200 bg-gray-50/50">No matches confirmed today.</td></tr>
           ) : (
             scheduledSlots.map(slot => {
               const times = getDualTimes(slot.start_time, timeZone);
@@ -71,7 +72,7 @@ export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, 
                   </td>
                   <td className="p-4 font-black text-[#5E4791]">{times.of}</td>
                   <td className="p-4 font-black text-[#0F172A]">{slot.patient_identifier}</td>
-                  <td className="p-4 font-bold text-[#007C8C]">{slot.profiles?.email?.split('@')[0] || 'Unknown'}</td>
+                  <td className="p-4 font-bold text-[#007C8C]">{slot.ic_email?.split('@')[0] || 'Unknown'}</td>
                 </tr>
               );
             })
