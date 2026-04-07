@@ -1,81 +1,85 @@
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
-import { AuthProvider } from './context/AuthContext';
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { ErrorBoundary } from './components/ErrorBoundary';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { Login } from './pages/Login';
 import { AdminPanel } from './pages/AdminPanel';
-import { ICDashboard } from './pages/ICDashboard';
 import { ManagerCenter } from './pages/ManagerCenter';
-import './index.css';
+import { ICDashboard } from './pages/ICDashboard';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
-// Professional 404 Catch-All Component
-const NotFound = () => (
-  <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
-    <h1 className="text-8xl font-black text-[#0F172A] mb-4">404</h1>
-    <p className="text-xl text-gray-600 font-medium mb-8">Oops! The page you are looking for does not exist.</p>
-    <Link to="/" className="bg-[#5E4791] text-white px-8 py-4 rounded-2xl font-black shadow-lg hover:bg-[#4a3872] transition-all">
-      Return to Safety
-    </Link>
-  </div>
-);
+// This intelligently decides where to send people who land on the root "yourwebsite.com/" URL
+function RootRedirect() {
+  const { user, loading } = useAuth();
+  
+  if (loading) return null;
+  if (!user) return <Login />;
+  
+  // If they are already logged in, skip the login screen and send them to their dashboard
+  if (user.role === 'ADMIN') return <Navigate to="/admin" replace />;
+  if (user.role === 'MANAGER') return <Navigate to="/manager" replace />;
+  return <Navigate to="/dashboard" replace />;
+}
+
+// 404 Catch-All Page
+function NotFound() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center text-center px-6">
+      <div className="w-20 h-20 bg-[#F3EFF9] text-[#5E4791] rounded-3xl flex items-center justify-center text-3xl font-black mb-6 shadow-sm border border-[#E7DFF3]">
+        !?
+      </div>
+      <h1 className="text-4xl sm:text-5xl font-black text-[#0F172A] mb-4 tracking-tight">Lost in the Circus?</h1>
+      <h2 className="text-xl font-bold text-gray-500 mb-8 max-w-md">
+        The page you are looking for doesn't exist, has been moved, or you don't have permission to view it.
+      </h2>
+      <a href="/" className="px-8 py-4 bg-[#0F172A] text-white font-black rounded-xl hover:bg-gray-800 transition-all shadow-lg active:scale-95">
+        Return to Safety
+      </a>
+    </div>
+  );
+}
 
 function App() {
   return (
-    <ErrorBoundary>
+    <AuthProvider>
       <Router>
-        <AuthProvider>
-          {/* Global Toast Notification System */}
-          <Toaster 
-            position="top-right"
-            toastOptions={{
-              duration: 4000,
-              style: {
-                fontWeight: 'bold',
-                borderRadius: '1rem',
-                padding: '16px',
-                color: '#0F172A',
-                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-              },
-            }}
+        <Routes>
+          {/* Base URL */}
+          <Route path="/" element={<RootRedirect />} />
+          
+          {/* Strictly Admin Only */}
+          <Route 
+            path="/admin" 
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <AdminPanel />
+              </ProtectedRoute>
+            } 
           />
           
-          <Routes>
-            <Route path="/" element={<Login />} />
-            
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute requiredRole="ADMIN">
-                  <AdminPanel />
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <ICDashboard />
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/manager"
-              element={
-                <ProtectedRoute requiredRole="MANAGER">
-                  <ManagerCenter />
-                </ProtectedRoute>
-              }
-            />
-            
-            {/* Catch-All Route for Typos */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AuthProvider>
+          {/* Admins and Managers can access the Dispatch Center */}
+          <Route 
+            path="/manager" 
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}>
+                <ManagerCenter />
+              </ProtectedRoute>
+            } 
+          />
+          
+          {/* Everyone can access the IC Dashboard (Admins might want to see how it looks) */}
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'MANAGER', 'IC']}>
+                <ICDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          
+          {/* The Catch-All Asterisk catches any URL that isn't defined above */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
       </Router>
-    </ErrorBoundary>
+    </AuthProvider>
   );
 }
 
