@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CircleCheck, User, Calendar, Loader, CircleAlert as AlertCircle, X, Link as LinkIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import toast from 'react-hot-toast';
 
 export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComplete, getDualTimes, timeZone }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -14,27 +15,26 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
 
   const executeDispatch = async () => {
     if (!selectedIC || !selectedSlot) return;
-
     setDispatching(true);
     try {
       // 1. Assign the slot
-      await supabase.from('bps_slots').update({
+      const { error: slotErr } = await supabase.from('bps_slots').update({
         status: 'ASSIGNED',
         assigned_ic_id: selectedIC.ic_id,
         assigned_at: new Date().toISOString(),
         zoom_link: zoomLinkInput || selectedSlot.zoom_link
       }).eq('id', selectedSlot.id);
+      if (slotErr) throw slotErr;
 
-      // 2. Mark IC as BUSY
+      // 2. Set IC to busy locally (The IC app will delete its own queue row securely)
       await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', selectedIC.ic_id);
 
-      // 3. EXPLICIT QUEUE CLEANUP
-      await supabase.from('queue_entries').delete().eq('ic_id', selectedIC.ic_id);
-
+      toast.success('Dispatched! Awaiting IC Confirmation.');
       setShowConfirmModal(false);
-      onDispatchComplete();
+      if (onDispatchComplete) onDispatchComplete();
     } catch (error) {
-      console.error('Dispatch Error:', error);
+      toast.error('Dispatch failed.');
+      console.error(error);
     } finally {
       setDispatching(false);
     }
@@ -53,9 +53,7 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
               <User className="w-3 h-3" /> Selected Staff (IC)
             </p>
             {selectedIC ? (
-              <p className="font-bold text-xl text-white">
-                {selectedIC.profiles.email.split('@')[0]}
-              </p>
+              <p className="font-bold text-xl text-white">{selectedIC.profiles.email.split('@')[0]}</p>
             ) : (
               <p className="text-gray-500 italic font-medium">Waiting for selection...</p>
             )}
@@ -67,14 +65,9 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
             </p>
             {selectedSlot ? (
               <div>
-                <p className="font-bold text-xl text-white mb-2">
-                  {selectedSlot.patient_identifier}
-                </p>
+                <p className="font-bold text-xl text-white mb-2">{selectedSlot.patient_identifier}</p>
                 <div className="bg-black/30 rounded-lg p-3 text-sm font-medium">
-                  OF Time:{' '}
-                  <span className="text-purple-300 font-bold">
-                    {getDualTimes(selectedSlot.start_time, timeZone).of}
-                  </span>
+                  OF Time: <span className="text-purple-300 font-bold">{getDualTimes(selectedSlot.start_time, timeZone).of}</span>
                 </div>
               </div>
             ) : (
@@ -99,11 +92,7 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
               <h2 className="text-xl font-black text-[#0F172A] flex items-center gap-2">
                 <AlertCircle className="w-6 h-6 text-[#007C8C]" /> Confirm Assignment
               </h2>
-              <button
-                onClick={() => setShowConfirmModal(false)}
-                disabled={dispatching}
-                className="text-gray-400 hover:text-gray-900 transition-colors"
-              >
+              <button onClick={() => setShowConfirmModal(false)} disabled={dispatching} className="text-gray-400 hover:text-gray-900 transition-colors">
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -111,25 +100,15 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
             <div className="p-8">
               <div className="bg-gray-50 border-2 border-gray-100 rounded-2xl p-5 shadow-sm space-y-4 mb-6">
                 <div className="flex justify-between items-center pb-4 border-b border-gray-200">
-                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                    Staff Member
-                  </span>
-                  <span className="font-black text-[#007C8C] text-lg">
-                    {selectedIC.profiles.email.split('@')[0]}
-                  </span>
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Staff Member</span>
+                  <span className="font-black text-[#007C8C] text-lg">{selectedIC.profiles.email.split('@')[0]}</span>
                 </div>
                 <div className="flex justify-between items-center pb-4 border-b border-gray-200">
-                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                    Room ID
-                  </span>
-                  <span className="font-black text-[#0F172A] text-lg">
-                    {selectedSlot.patient_identifier}
-                  </span>
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Room ID</span>
+                  <span className="font-black text-[#0F172A] text-lg">{selectedSlot.patient_identifier}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                    Overflow Time
-                  </span>
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Overflow Time</span>
                   <span className="font-black text-[#5E4791] text-lg bg-purple-50 px-3 py-1 rounded-lg">
                     {getDualTimes(selectedSlot.start_time, timeZone).of}
                   </span>
@@ -140,37 +119,14 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                   <LinkIcon className="w-3 h-3" /> Zoom Link (Required for IC)
                 </label>
-                <input
-                  type="text"
-                  placeholder="Paste Zoom link here..."
-                  value={zoomLinkInput}
-                  onChange={(e) => setZoomLinkInput(e.target.value)}
-                  className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl font-medium focus:border-[#5E4791] focus:ring-0 outline-none"
-                />
+                <input type="text" placeholder="Paste Zoom link here..." value={zoomLinkInput} onChange={(e) => setZoomLinkInput(e.target.value)} className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl font-medium focus:border-[#5E4791] focus:ring-0 outline-none" />
               </div>
             </div>
 
             <div className="p-6 flex gap-3 bg-gray-50 border-t border-gray-100">
-              <button
-                onClick={() => setShowConfirmModal(false)}
-                disabled={dispatching}
-                className="flex-1 py-4 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-100 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={executeDispatch}
-                disabled={dispatching}
-                style={{ backgroundColor: '#0F172A', color: '#ffffff' }}
-                className="flex-1 py-4 rounded-xl font-black shadow-lg hover:opacity-90 transition-opacity flex justify-center items-center gap-2"
-              >
-                {dispatching ? (
-                  <>
-                    <Loader className="w-5 h-5 animate-spin" /> Routing...
-                  </>
-                ) : (
-                  'Route IC Now'
-                )}
+              <button onClick={() => setShowConfirmModal(false)} disabled={dispatching} className="flex-1 py-4 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-100 transition-colors">Cancel</button>
+              <button onClick={executeDispatch} disabled={dispatching} style={{ backgroundColor: '#0F172A', color: '#ffffff' }} className="flex-1 py-4 rounded-xl font-black shadow-lg hover:opacity-90 transition-opacity flex justify-center items-center gap-2">
+                {dispatching ? <><Loader className="w-5 h-5 animate-spin" /> Routing...</> : 'Route IC Now'}
               </button>
             </div>
           </div>
