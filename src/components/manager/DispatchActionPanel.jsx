@@ -17,7 +17,7 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
     if (!selectedIC || !selectedSlot) return;
     setDispatching(true);
     try {
-      // 1. Assign the slot
+      // 1. Assign Slot
       const { error: slotErr } = await supabase.from('bps_slots').update({
         status: 'ASSIGNED',
         assigned_ic_id: selectedIC.ic_id,
@@ -26,9 +26,11 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
       }).eq('id', selectedSlot.id);
       if (slotErr) throw slotErr;
 
-      // 2. State Machine Update: Set IC to PENDING_MATCH
-      // This instantly removes them from the Manager's queue view and triggers the IC Dashboard logic
-      await supabase.from('profiles').update({ current_status: 'PENDING_MATCH' }).eq('id', selectedIC.ic_id);
+      // 2. Mark IC as BUSY (Removes them from Manager's queue view immediately)
+      await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', selectedIC.ic_id);
+
+      // Best effort queue delete (May fail silently due to RLS, IC Dashboard Self-Heals it)
+      await supabase.from('queue_entries').delete().eq('ic_id', selectedIC.ic_id).catch(()=>{});
 
       toast.success('Dispatched! Awaiting IC Confirmation.');
       setShowConfirmModal(false);
