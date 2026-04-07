@@ -10,7 +10,7 @@ export function ICDashboard() {
   const [inQueue, setInQueue] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
+  const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes in seconds
   const [profileTier, setProfileTier] = useState(3);
 
   useEffect(() => {
@@ -19,13 +19,13 @@ export function ICDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Countdown Timer Logic
+  // 30-Minute Countdown Timer
   useEffect(() => {
     if (assignment && assignment.status === 'ASSIGNED' && assignment.assigned_at) {
       const timer = setInterval(() => {
         const assignedTime = new Date(assignment.assigned_at).getTime();
         const now = new Date().getTime();
-        const diffInSeconds = Math.floor((300000 - (now - assignedTime)) / 1000);
+        const diffInSeconds = Math.floor((1800000 - (now - assignedTime)) / 1000); // 30 mins
         if (diffInSeconds <= 0) {
           setAssignment(null);
           setTimeLeft(0);
@@ -37,7 +37,6 @@ export function ICDashboard() {
     }
   }, [assignment]);
 
-  // Real-time listener
   useEffect(() => {
     if (!user?.id) return;
     const channel = supabase
@@ -50,7 +49,7 @@ export function ICDashboard() {
   const checkStatus = async () => {
     if (!user?.id || loading || confirming) return; 
     try {
-      // 1. PRINCIPAL FIX: ALWAYS check for an active assignment FIRST
+      // 1. SELF-HEALING ARCHITECTURE: ALWAYS check for an active assignment FIRST
       const { data: slotData } = await supabase.from('bps_slots')
         .select('*')
         .eq('assigned_ic_id', user.id)
@@ -60,21 +59,17 @@ export function ICDashboard() {
       const activeAssignment = slotData?.[0] || null;
       setAssignment(activeAssignment);
 
-      // 2. Only check the queue if they DON'T have an active assignment
-      if (!activeAssignment) {
-        const { data: queueData } = await supabase.from('queue_entries')
-          .select('*')
-          .eq('ic_id', user.id)
-          .limit(1);
-        setInQueue(queueData && queueData.length > 0);
-      } else {
-        // SELF-HEALING STATE: If they have an assignment, force the queue UI off.
+      // 2. If assignment exists, forcefully override the queue UI and delete DB queue row.
+      if (activeAssignment) {
         setInQueue(false);
-        // And ensure they are deleted from the queue table using their own RLS permissions.
         await supabase.from('queue_entries').delete().eq('ic_id', user.id);
+      } else {
+        // 3. Only check the queue if they DON'T have an active assignment
+        const { data: queueData } = await supabase.from('queue_entries').select('*').eq('ic_id', user.id).limit(1);
+        setInQueue(queueData && queueData.length > 0);
       }
 
-      // 3. Update profile tier for statistics logging
+      // Update profile tier for statistics logging
       const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).limit(1);
       if (profileData?.[0]) setProfileTier(profileData[0].tier_rank);
 
@@ -117,6 +112,7 @@ export function ICDashboard() {
     if (confirming || !assignment) return;
     setConfirming(true);
     try {
+      // Log for statistics
       await supabase.from('dispatch_logs').insert([{
         ic_id: user.id,
         ic_email: user.email,
@@ -144,7 +140,8 @@ export function ICDashboard() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Note: The UI order here is crucial. We now check assignment BEFORE inQueue.
+  // UI Flow: Priority is Assignment > Queue > Idle
+
   if (assignment && assignment.status === 'ASSIGNED') {
     return (
       <div className="min-h-screen bg-white flex flex-col">
@@ -186,7 +183,6 @@ export function ICDashboard() {
               <Video className="w-8 h-8 text-blue-600" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-6">Confirmed Match</h1>
-
             <div className="space-y-4 text-left">
               <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
                 <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-1">Room ID</p>
@@ -203,7 +199,6 @@ export function ICDashboard() {
                 )}
               </div>
             </div>
-
             <button onClick={handleEnterQueue} disabled={loading} className="mt-8 w-full bg-[#A890D3] hover:bg-[#8B6FC4] text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all shadow-lg">
               {loading ? 'Entering Queue...' : 'Patient No-Show: Re-enter Queue'}
             </button>
@@ -213,7 +208,6 @@ export function ICDashboard() {
     );
   }
 
-  // Fallback to queue view ONLY if there are no assignments
   if (inQueue) {
     return (
       <div className="min-h-screen bg-white flex flex-col">
