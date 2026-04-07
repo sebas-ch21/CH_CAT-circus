@@ -35,7 +35,8 @@ export function ICDashboard() {
       const { data: queueData } = await supabase.from('queue_entries').select('id').eq('ic_id', user.id).limit(1);
       const isQueuedDB = queueData && queueData.length > 0;
 
-      // 3. Simple Truth Resolution: If assigned, you aren't queued. If not assigned, show queue status.
+      // 3. Simple Truth Resolution: 
+      // If the database says you are assigned, you aren't in the queue view.
       if (activeSlot) {
         setInQueue(false);
       } else {
@@ -53,19 +54,20 @@ export function ICDashboard() {
     return () => clearInterval(interval);
   }, [checkStatus]);
 
-  // Visual 5-Minute Timer (Does NOT mutate database on expiration - server handles that)
+  // Visual 5-Minute Timer (Server handles actual expiration, this is just for the user)
   useEffect(() => {
     if (assignment?.status === 'ASSIGNED' && assignment.assigned_at) {
       const assignedTime = new Date(assignment.assigned_at).getTime();
       const timer = setInterval(() => {
-        const diff = Math.floor((300000 - (Date.now() - assignedTime)) / 1000); 
+        const now = new Date().getTime();
+        const diff = Math.floor((300000 - (now - assignedTime)) / 1000); 
         setTimeLeft(diff > 0 ? diff : 0);
       }, 1000);
       return () => clearInterval(timer);
     }
   }, [assignment]);
 
-  // EXPLICIT BUTTON ACTIONS (Triggering Atomic RPCs)
+  // EXPLICIT BUTTON ACTIONS (Triggering our Unbreakable RPCs)
   const handleEnterQueue = async () => {
     setLoading(true);
     try {
@@ -73,25 +75,32 @@ export function ICDashboard() {
       if (error) throw error;
       toast.success('Entered Queue');
       await checkStatus();
-    } catch (error) { toast.error('Failed to enter queue'); console.error(error); } finally { setLoading(false); }
+    } catch (error) { 
+      toast.error('Failed to enter queue'); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const handleExitQueue = async () => {
     setLoading(true);
     try {
-      // Safe to use standard calls since this is just the IC taking themselves out
       await supabase.from('queue_entries').delete().eq('ic_id', user.id);
       await supabase.from('profiles').update({ current_status: 'AVAILABLE' }).eq('id', user.id);
       toast.success('Exited Queue');
       await checkStatus();
-    } catch (error) { toast.error('Failed to exit queue'); } finally { setLoading(false); }
+    } catch (error) { 
+      toast.error('Failed to exit queue'); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const handleConfirmReceipt = async () => {
     if (actionLoading || !assignment) return;
     setActionLoading(true);
     try {
-      // ATOMIC CONFIRMATION
+      // ATOMIC CONFIRMATION VIA RPC
       const { error } = await supabase.rpc('ic_accept_match', {
         p_slot_id: assignment.id,
         p_ic_id: user.id,
@@ -105,14 +114,18 @@ export function ICDashboard() {
 
       toast.success('Match Confirmed!');
       await checkStatus();
-    } catch (error) { toast.error('Failed to confirm match.'); console.error(error); } finally { setActionLoading(false); }
+    } catch (error) { 
+      toast.error('Failed to confirm match.'); 
+    } finally { 
+      setActionLoading(false); 
+    }
   };
 
   const handleRejectAssignment = async () => {
     if (actionLoading || !assignment) return;
     setActionLoading(true);
     try {
-      // ATOMIC REJECTION (Puts them back in queue instantly)
+      // ATOMIC REJECTION VIA RPC (Instantly puts them back in queue)
       const { error } = await supabase.rpc('reject_or_cancel_match', {
         p_slot_id: assignment.id,
         p_ic_id: user.id
@@ -121,7 +134,11 @@ export function ICDashboard() {
 
       toast.success('Assignment rejected. Re-entered queue.');
       await checkStatus();
-    } catch (error) { toast.error('Failed to reject assignment.'); console.error(error); } finally { setActionLoading(false); }
+    } catch (error) { 
+      toast.error('Failed to reject assignment.'); 
+    } finally { 
+      setActionLoading(false); 
+    }
   };
 
   const formatMinutes = (seconds) => {
