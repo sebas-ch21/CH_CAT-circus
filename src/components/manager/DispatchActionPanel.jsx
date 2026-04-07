@@ -24,12 +24,11 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
         assigned_at: new Date().toISOString(),
         zoom_link: zoomLinkInput || selectedSlot.zoom_link
       }).eq('id', selectedSlot.id);
+      
       if (slotErr) throw slotErr;
 
-      // 2. Mark IC as BUSY (Removes them from Manager's queue view immediately)
+      // 2. Mark Profile BUSY & Clear Queue
       await supabase.from('profiles').update({ current_status: 'BUSY' }).eq('id', selectedIC.ic_id);
-
-      // Best effort queue delete (May fail silently due to RLS, IC Dashboard Self-Heals it)
       await supabase.from('queue_entries').delete().eq('ic_id', selectedIC.ic_id).catch(()=>{});
 
       toast.success('Dispatched! Awaiting IC Confirmation.');
@@ -56,7 +55,7 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
               <User className="w-3 h-3" /> Selected Staff (IC)
             </p>
             {selectedIC ? (
-              <p className="font-bold text-xl text-white">{selectedIC.profiles.email.split('@')[0]}</p>
+              <p className="font-bold text-xl text-white">{selectedIC.profiles?.email?.split('@')[0] || 'Selected User'}</p>
             ) : (
               <p className="text-gray-500 italic font-medium">Waiting for selection...</p>
             )}
@@ -104,7 +103,7 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
               <div className="bg-gray-50 border-2 border-gray-100 rounded-2xl p-5 shadow-sm space-y-4 mb-6">
                 <div className="flex justify-between items-center pb-4 border-b border-gray-200">
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Staff Member</span>
-                  <span className="font-black text-[#007C8C] text-lg">{selectedIC.profiles.email.split('@')[0]}</span>
+                  <span className="font-black text-[#007C8C] text-lg">{selectedIC.profiles?.email?.split('@')[0] || 'Unknown'}</span>
                 </div>
                 <div className="flex justify-between items-center pb-4 border-b border-gray-200">
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Room ID</span>
