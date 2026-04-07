@@ -7,8 +7,10 @@ export function TopNav() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Hide nav on the login screen
   if (!user) return null;
 
+  // Dynamically build navigation tabs based on user role
   const navItems = [];
   if (user.role === 'ADMIN') {
     navItems.push({ label: 'Admin', path: '/admin', icon: ShieldCheck });
@@ -22,14 +24,17 @@ export function TopNav() {
   }
 
   return (
-    <nav className="bg-[#0F172A] text-white px-4 sm:px-6 py-3 flex justify-between items-center shadow-md w-full relative z-50">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="w-8 h-8 bg-[#007C8C] rounded-lg flex items-center justify-center font-bold text-lg shadow-sm">C</div>
+    <nav className="bg-[#0F172A] text-white px-4 sm:px-6 py-4 flex justify-between items-center shadow-md w-full relative z-50">
+      <div className="flex items-center gap-6">
+        
+        {/* Logo */}
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="w-8 h-8 bg-[#5E4791] rounded-lg flex items-center justify-center font-bold text-lg shadow-sm">C</div>
           <span className="font-black text-lg tracking-wide hidden md:block">Charlie Admissions</span>
         </div>
 
-        <div className="hidden sm:flex items-center gap-1 ml-4 bg-white/5 rounded-xl p-1">
+        {/* Dynamic Navigation Links */}
+        <div className="hidden sm:flex items-center gap-2 ml-4 bg-white/5 rounded-xl p-1.5 shadow-inner">
           {navItems.map(item => {
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
@@ -37,13 +42,13 @@ export function TopNav() {
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
                   isActive
-                    ? 'bg-white/15 text-white shadow-sm'
+                    ? 'bg-[#5E4791] text-white shadow-md'
                     : 'text-gray-400 hover:text-white hover:bg-white/10'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <Icon className="w-4 h-4" />
                 {item.label}
               </button>
             );
@@ -51,15 +56,16 @@ export function TopNav() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 sm:gap-5">
-        <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-xl border border-white/5">
-          <UserIcon className="w-3.5 h-3.5 text-[#4DD9E8]" />
-          <span className="text-xs font-bold tracking-wide hidden sm:inline">{user.email?.split('@')[0]}</span>
-          <span className="text-[9px] uppercase tracking-widest bg-[#007C8C] px-2 py-0.5 rounded-md font-black shadow-sm">{user.role}</span>
+      {/* User Profile & Logout */}
+      <div className="flex items-center gap-4 sm:gap-6">
+        <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-xl border border-white/5 shadow-inner">
+          <UserIcon className="w-4 h-4 text-[#A890D3]" />
+          <span className="text-sm font-bold tracking-wide hidden sm:inline">{user.email?.split('@')[0]}</span>
+          <span className="text-[10px] uppercase tracking-widest bg-[#5E4791] px-2 py-1 rounded-md ml-2 font-black shadow-sm">{user.role}</span>
         </div>
 
-        <button onClick={logout} className="text-xs font-bold text-gray-400 hover:text-white flex items-center gap-1.5 transition-colors px-2 py-1.5 rounded-lg hover:bg-white/10">
-          <LogOut className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Logout</span>
+        <button onClick={logout} className="text-sm font-bold text-gray-400 hover:text-white flex items-center gap-2 transition-colors px-3 py-2 rounded-lg hover:bg-white/10">
+          <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Logout</span>
         </button>
       </div>
     </nav>
