@@ -9,7 +9,7 @@ export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, 
   const handleSendBackToQueue = async (slot) => {
     setProcessingId(slot.id);
     try {
-      // ONE ATOMIC CALL: Resets the slot, sets IC status to IN_QUEUE, and handles the queue table insert safely.
+      // ATOMIC TRANSACTION: Revokes the slot, sets IC back to queue, handles everything.
       const { error } = await supabase.rpc('reject_or_cancel_match', {
         p_slot_id: slot.id,
         p_ic_id: slot.assigned_ic_id
@@ -40,7 +40,7 @@ export function ScheduledMatchesTable({ scheduledSlots, getDualTimes, timeZone, 
         </thead>
         <tbody>
           {scheduledSlots.length === 0 ? (
-            <tr><td colSpan="4" className="p-12 text-center text-gray-400 font-medium border-2 border-dashed border-gray-200 bg-gray-50/50">No matches scheduled today.</td></tr>
+            <tr><td colSpan="4" className="p-12 text-center text-gray-400 font-medium border-2 border-dashed border-gray-200 bg-gray-50/50">No matches confirmed today.</td></tr>
           ) : (
             scheduledSlots.map(slot => {
               const times = getDualTimes(slot.start_time, timeZone);
