@@ -2,7 +2,24 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
 import { CSVUploadZone } from '../components/CSVUploadZone';
-import { Users, Calendar as CalendarIcon, ShieldCheck, Search, Trash2, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Loader, Eye, EyeOff, Plus, X, ArrowRight, TableProperties } from 'lucide-react';
+import { 
+  Users, 
+  Calendar as CalendarIcon, 
+  ShieldCheck, 
+  Search, 
+  Trash2, 
+  CircleAlert as AlertCircle, 
+  CircleCheck as CheckCircle, 
+  Loader, 
+  Eye, 
+  EyeOff, 
+  Plus, 
+  X, 
+  ArrowRight, 
+  TableProperties, 
+  UserPlus 
+} from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const TIME_INTERVALS = [
   { bps_mt: '07:00 AM', of_mt: '07:15 AM', of_ct: '08:15 AM', val: '07:00', of_val: '07:15' },
@@ -53,6 +70,14 @@ export function AdminPanel() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [pendingDuplicates, setPendingDuplicates] = useState([]);
   const [resolvedUploadData, setResolvedUploadData] = useState([]);
+
+  // Add Headcount Manually State
+  const [isAddHeadcountModalOpen, setIsAddHeadcountModalOpen] = useState(false);
+  const [newHeadcountEmail, setNewHeadcountEmail] = useState('');
+  const [newHeadcountRole, setNewHeadcountRole] = useState('IC');
+  const [newHeadcountTier, setNewHeadcountTier] = useState(3);
+  const [isAddingHeadcount, setIsAddingHeadcount] = useState(false);
+  const [addHeadcountError, setAddHeadcountError] = useState(null);
 
   // Passcodes
   const [currentAdminPin, setCurrentAdminPin] = useState('charlieadmin');
@@ -266,6 +291,47 @@ export function AdminPanel() {
     await fetchProfiles();
     setLoadingStaff(false);
   };
+
+  const handleAddHeadcountSubmit = async (e) => {
+    e.preventDefault();
+    setAddHeadcountError(null);
+    
+    if (!newHeadcountEmail || newHeadcountEmail.trim() === '') {
+      setAddHeadcountError('Email is required');
+      return;
+    }
+
+    setIsAddingHeadcount(true);
+
+    const emailFormatted = newHeadcountEmail.trim().toLowerCase();
+
+    // Check for existing user locally first
+    const existing = profiles.find(p => p.email?.toLowerCase() === emailFormatted);
+    if (existing) {
+      setAddHeadcountError('A user with this email already exists in the roster.');
+      setIsAddingHeadcount(false);
+      return;
+    }
+
+    const { error } = await supabase.from('profiles').insert([{
+      email: emailFormatted,
+      role: newHeadcountRole,
+      tier_rank: parseInt(newHeadcountTier)
+    }]);
+
+    if (error) {
+      setAddHeadcountError(`Failed to add user: ${error.message}`);
+      setIsAddingHeadcount(false);
+    } else {
+      toast.success('User added successfully');
+      setNewHeadcountEmail('');
+      setNewHeadcountRole('IC');
+      setNewHeadcountTier(3);
+      setIsAddHeadcountModalOpen(false);
+      await fetchProfiles();
+      setIsAddingHeadcount(false);
+    }
+  };
   
   const handleDeleteSlot = async (id) => {
     await supabase.from('bps_slots').delete().eq('id', id);
@@ -446,14 +512,25 @@ export function AdminPanel() {
 
           {activeTab === 'roster' && (
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-              <div className="xl:col-span-4 bg-gray-50 rounded-xl border border-gray-200 p-5 shadow-sm">
-                <h3 className="text-lg font-bold text-[#0F172A] mb-2">Import Roster CSV</h3>
-                <CSVUploadZone onUpload={handleStaffUpload} title="Drop CSV Data" description="Requires columns: email, role, tier_rank" expectedColumns={['email', 'role', 'tier_rank']} />
-                {staffMessage && (
-                  <div className={`mt-4 p-3 rounded-xl text-sm font-bold flex items-center gap-2 ${staffMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
-                    {staffMessage.text}
-                  </div>
-                )}
+              <div className="xl:col-span-4 bg-gray-50 rounded-xl border border-gray-200 p-5 shadow-sm space-y-6">
+                <div>
+                  <h3 className="text-lg font-bold text-[#0F172A] mb-2">Import Roster CSV</h3>
+                  <CSVUploadZone onUpload={handleStaffUpload} title="Drop CSV Data" description="Requires columns: email, role, tier_rank" expectedColumns={['email', 'role', 'tier_rank']} />
+                  {staffMessage && (
+                    <div className={`mt-4 p-3 rounded-xl text-sm font-bold flex items-center gap-2 ${staffMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                      {staffMessage.text}
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-gray-200 pt-6">
+                  <h3 className="text-lg font-bold text-[#0F172A] mb-2">Manual Headcount</h3>
+                  <button 
+                    onClick={() => setIsAddHeadcountModalOpen(true)}
+                    className="w-full py-3 bg-white border-2 border-dashed border-[#5E4791] text-[#5E4791] rounded-xl font-bold hover:bg-purple-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <UserPlus className="w-4 h-4" /> Add Headcount Manually
+                  </button>
+                </div>
               </div>
               <div className="xl:col-span-8 flex flex-col">
                 <div className="flex justify-between items-center mb-4">
@@ -622,6 +699,78 @@ export function AdminPanel() {
           </div>
         </div>
       )}
+
+      {/* Manual Headcount Modal */}
+      {isAddHeadcountModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/80 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200 p-8">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-black text-[#0F172A] flex items-center gap-2">
+                <UserPlus className="w-6 h-6 text-[#5E4791]" /> Add Staff Member
+              </h2>
+              <button onClick={() => setIsAddHeadcountModalOpen(false)} disabled={isAddingHeadcount} className="text-gray-400 hover:text-gray-900 transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddHeadcountSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Email</label>
+                <input 
+                  type="email" 
+                  required
+                  placeholder="name@clinic.com"
+                  value={newHeadcountEmail} 
+                  onChange={(e) => setNewHeadcountEmail(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-medium focus:border-[#5E4791] focus:ring-0 outline-none"
+                />
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Role</label>
+                  <select 
+                    value={newHeadcountRole} 
+                    onChange={(e) => setNewHeadcountRole(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-bold focus:border-[#5E4791] focus:ring-0 outline-none"
+                  >
+                    <option value="ADMIN">Admin</option>
+                    <option value="MANAGER">Manager</option>
+                    <option value="IC">IC (Staff)</option>
+                  </select>
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Tier</label>
+                  <select 
+                    value={newHeadcountTier} 
+                    onChange={(e) => setNewHeadcountTier(parseInt(e.target.value))}
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-bold focus:border-[#5E4791] focus:ring-0 outline-none"
+                  >
+                    <option value={1}>1</option>
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                  </select>
+                </div>
+              </div>
+
+              {addHeadcountError && (
+                <div className="p-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl text-center border border-red-100">
+                  {addHeadcountError}
+                </div>
+              )}
+
+              <div className="pt-4 flex gap-3">
+                <button type="button" onClick={() => setIsAddHeadcountModalOpen(false)} disabled={isAddingHeadcount} className="flex-1 py-3 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-100 transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={isAddingHeadcount} className="flex-1 py-3 rounded-xl font-black bg-[#5E4791] text-white shadow-md hover:bg-[#4a3872] transition-colors flex justify-center items-center gap-2">
+                  {isAddingHeadcount ? <Loader className="w-5 h-5 animate-spin" /> : 'Add User'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
