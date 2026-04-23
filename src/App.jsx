@@ -5,7 +5,6 @@ import { AdminPanel } from './pages/AdminPanel';
 import { ManagerCenter } from './pages/ManagerCenter';
 import { ICDashboard } from './pages/ICDashboard';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { ErrorBoundary } from './components/ErrorBoundary';
 
 // This intelligently decides where to send people who land on the root "yourwebsite.com/" URL
 function RootRedirect() {
@@ -40,10 +39,9 @@ function NotFound() {
 
 function App() {
   return (
-    <ErrorBoundary>
-      <AuthProvider>
-        <Router>
-          <Routes>
+    <AuthProvider>
+      <Router>
+        <Routes>
           {/* Base URL */}
           <Route path="/" element={<RootRedirect />} />
           
@@ -79,10 +77,9 @@ function App() {
           
           {/* The Catch-All Asterisk catches any URL that isn't defined above */}
           <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Router>
-      </AuthProvider>
-    </ErrorBoundary>
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }
 

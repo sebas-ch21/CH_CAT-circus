@@ -60,7 +60,7 @@ describe('Manager Center Tests', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Save/i)).toBeInTheDocument();
-      expect(screen.getByText(/07:00 AM/i)).toBeInTheDocument();
+      expect(screen.getByText(/07:00 AM MT/i)).toBeInTheDocument();
     });
   });
 
