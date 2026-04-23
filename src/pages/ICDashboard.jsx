@@ -19,7 +19,7 @@ export function ICDashboard() {
     try {
       const { data: profile, error: pError } = await supabase
         .from('profiles').select('tier_rank').eq('id', user.id).maybeSingle();
-        
+
       if (pError) { console.error('[Supabase Error]:', pError); toast.error(pError.message); }
       if (profile) setProfileTier(profile.tier_rank);
 
@@ -63,7 +63,7 @@ export function ICDashboard() {
       })
       .subscribe();
 
-    return () => { 
+    return () => {
       supabase.removeChannel(channel);
     };
   }, [checkStatus]);
@@ -125,23 +125,24 @@ export function ICDashboard() {
 
   if (assignment && assignment.status === 'ASSIGNED') {
     return (
-      <div className="min-h-screen bg-white flex flex-col">
+      <div className="min-h-[100dvh] ch-paper flex flex-col">
         <TopNav />
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm space-y-4 text-left">
-            <div className="bg-green-50 border-2 border-green-500 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 bg-green-500 text-white px-4 py-1 rounded-bl-xl font-bold flex items-center gap-2">
-                <Clock className="w-4 h-4" /> {formatMinutes(timeLeft)}
+          <div className="w-full max-w-sm space-y-4 text-left ch-rise">
+            <div className="relative overflow-hidden rounded-2xl p-6 bg-[#E8F0EE] border border-[#A8C8C2]">
+              <div className="absolute top-0 right-0 bg-[#335649] text-[#FAF8F5] px-4 py-1.5 rounded-bl-2xl text-sm font-semibold flex items-center gap-2">
+                <Clock className="w-4 h-4" strokeWidth={1.8} /> {formatMinutes(timeLeft)}
               </div>
-              <p className="font-bold text-green-900 text-xl mt-4 mb-6">New Assignment Ready!</p>
+              <p className="text-[11px] uppercase tracking-micro font-semibold text-[#335649] mt-6 mb-1">New assignment</p>
+              <p className="font-display text-3xl text-[#12142A] mb-6">Ready to accept</p>
               <div className="space-y-4">
                 <div>
-                  <p className="text-xs text-green-700 font-bold uppercase tracking-widest mb-1">Room ID</p>
-                  <p className="text-2xl font-black text-green-900">{assignment.patient_identifier}</p>
+                  <p className="text-[11px] text-[#58534C] font-semibold uppercase tracking-micro mb-1">Room ID</p>
+                  <p className="text-2xl font-semibold text-[#12142A] tracking-tight">{assignment.patient_identifier}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-green-700 font-bold uppercase tracking-widest mb-1">Meeting Time</p>
-                  <p className="text-lg font-bold text-green-900">{new Date(assignment.start_time).toLocaleString()}</p>
+                  <p className="text-[11px] text-[#58534C] font-semibold uppercase tracking-micro mb-1">Meeting time</p>
+                  <p className="text-lg font-medium text-[#12142A]">{new Date(assignment.start_time).toLocaleString()}</p>
                 </div>
               </div>
             </div>
@@ -149,16 +150,16 @@ export function ICDashboard() {
               <button
                 onClick={handleConfirmReceipt}
                 disabled={isAccepting || isRejecting || timeLeft <= 0}
-                className="w-full bg-[#059669] hover:bg-[#047857] text-white font-bold py-5 px-6 rounded-2xl text-xl transition-all flex items-center justify-center gap-3 shadow-lg disabled:opacity-50"
+                className="w-full bg-[#335649] hover:bg-[#0A3327] text-[#FAF8F5] font-semibold py-5 px-6 rounded-2xl text-lg transition-colors flex items-center justify-center gap-3 disabled:opacity-50 ch-focus-ring"
               >
-                {isAccepting ? <><Loader className="w-6 h-6 animate-spin" />Confirming...</> : 'Accept & View Zoom Link'}
+                {isAccepting ? <><Loader className="w-5 h-5 animate-spin" />Confirming</> : 'Accept & view Zoom link'}
               </button>
               <button
                 onClick={handleRejectAssignment}
                 disabled={isAccepting || isRejecting}
-                className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-4 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                className="w-full bg-white hover:bg-[#FDEBEC] text-[#9F2F2D] border border-[#F2C9CC] font-semibold py-4 px-6 rounded-2xl text-base transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <X className="w-5 h-5" /> Reject & Return to Queue
+                <X className="w-5 h-5" strokeWidth={1.8} /> Reject & return to queue
               </button>
             </div>
           </div>
@@ -169,33 +170,33 @@ export function ICDashboard() {
 
   if (assignment && assignment.status === 'CONFIRMED') {
     return (
-      <div className="min-h-screen bg-white flex flex-col">
+      <div className="min-h-[100dvh] ch-paper flex flex-col">
         <TopNav />
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm space-y-6 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-2">
-              <Video className="w-8 h-8 text-blue-600" />
+          <div className="w-full max-w-sm space-y-6 text-center ch-rise">
+            <div className="inline-flex items-center justify-center w-14 h-14 bg-[#CFE4EB] rounded-2xl mb-1">
+              <Video className="w-7 h-7 text-[#005682]" strokeWidth={1.8} />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-6">Confirmed Match</h1>
+            <h1 className="font-display text-4xl text-[#12142A] tracking-tight">Match confirmed</h1>
             <div className="space-y-4 text-left">
-              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
-                <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-1">Room ID</p>
-                <p className="text-3xl font-black text-[#0F172A]">{assignment.patient_identifier}</p>
+              <div className="ch-card p-6">
+                <p className="text-[11px] text-[#58534C] font-semibold uppercase tracking-micro mb-1">Room ID</p>
+                <p className="text-2xl font-semibold text-[#12142A] tracking-tight">{assignment.patient_identifier}</p>
               </div>
-              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
-                <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-1">Zoom Link</p>
+              <div className="ch-card p-6">
+                <p className="text-[11px] text-[#58534C] font-semibold uppercase tracking-micro mb-2">Zoom link</p>
                 {assignment.zoom_link
-                  ? <a href={assignment.zoom_link} target="_blank" rel="noreferrer" className="text-blue-600 font-bold hover:underline break-all">{assignment.zoom_link}</a>
-                  : <p className="text-gray-500 italic font-medium">Manager did not provide a link.</p>
+                  ? <a href={assignment.zoom_link} target="_blank" rel="noreferrer" className="text-[#005682] font-semibold hover:underline break-all">{assignment.zoom_link}</a>
+                  : <p className="text-[#A29A8E] italic font-medium">Manager did not provide a link.</p>
                 }
               </div>
             </div>
             <button
               onClick={handleEnterQueue}
               disabled={isQueueing}
-              className="mt-8 w-full bg-[#0F172A] hover:bg-gray-800 text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all shadow-lg disabled:opacity-50"
+              className="mt-6 w-full bg-[#12142A] hover:bg-[#011537] text-[#FAF8F5] font-semibold py-5 px-6 rounded-2xl text-base transition-colors disabled:opacity-50 ch-focus-ring"
             >
-              {isQueueing ? 'Entering Queue...' : 'Patient No-Show: Re-enter Queue'}
+              {isQueueing ? 'Entering queue...' : 'Patient no-show: re-enter queue'}
             </button>
           </div>
         </div>
@@ -205,21 +206,23 @@ export function ICDashboard() {
 
   if (inQueue) {
     return (
-      <div className="min-h-screen bg-white flex flex-col">
+      <div className="min-h-[100dvh] ch-paper flex flex-col">
         <TopNav />
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm space-y-8 text-center">
-            <div className="flex justify-center mb-4">
-              <CheckCircle2 className="w-24 h-24 text-green-500" />
+          <div className="w-full max-w-sm space-y-6 text-center ch-rise">
+            <div className="flex justify-center mb-2">
+              <div className="w-20 h-20 rounded-full bg-[#E8F0EE] flex items-center justify-center">
+                <CheckCircle2 className="w-10 h-10 text-[#335649]" strokeWidth={1.8} />
+              </div>
             </div>
-            <h1 className="text-2xl font-semibold text-gray-900 mb-2">Successfully Entered Queue</h1>
-            <p className="text-gray-600 mb-8">Waiting for manager dispatch. Do not close this page.</p>
+            <h1 className="font-display text-4xl text-[#12142A] tracking-tight">You&rsquo;re in the queue</h1>
+            <p className="text-[#58534C] font-medium">Waiting for manager dispatch. Keep this page open.</p>
             <button
               onClick={handleExitQueue}
               disabled={isQueueing}
-              className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-sm disabled:opacity-50"
+              className="w-full bg-white hover:bg-[#FDEBEC] text-[#9F2F2D] border border-[#F2C9CC] font-semibold py-5 px-6 rounded-2xl text-base transition-colors flex items-center justify-center gap-3 disabled:opacity-50"
             >
-              {isQueueing ? <Loader className="w-6 h-6 animate-spin" /> : <><XCircle className="w-6 h-6" /> Exit Queue</>}
+              {isQueueing ? <Loader className="w-5 h-5 animate-spin" /> : <><XCircle className="w-5 h-5" strokeWidth={1.8} /> Exit queue</>}
             </button>
           </div>
         </div>
@@ -228,23 +231,23 @@ export function ICDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className="min-h-[100dvh] ch-paper flex flex-col">
       <TopNav />
       <div className="flex-1 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-sm space-y-6">
-          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl p-5 flex gap-3">
-            <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+        <div className="w-full max-w-sm space-y-6 ch-rise">
+          <div className="bg-[#CFE4EB]/60 border border-[#A8C8C2] rounded-2xl p-5 flex gap-3">
+            <Info className="w-5 h-5 text-[#005682] flex-shrink-0 mt-0.5" strokeWidth={1.8} />
             <div>
-              <h3 className="font-bold text-blue-900 mb-1">IC Mode Instructions</h3>
-              <p className="text-sm text-blue-800 font-medium">Click below to enter the reassignment queue when your patient doesn't show up.</p>
+              <h3 className="font-semibold text-[#12142A] mb-1">IC mode</h3>
+              <p className="text-sm text-[#495654] font-medium leading-relaxed">Enter the reassignment queue when your patient doesn&rsquo;t show up.</p>
             </div>
           </div>
           <button
             onClick={handleEnterQueue}
             disabled={isQueueing}
-            className="w-full bg-[#0F172A] hover:bg-gray-800 text-white font-bold py-10 px-6 rounded-3xl text-xl transition-all shadow-2xl min-h-[160px] disabled:opacity-50"
+            className="w-full bg-[#12142A] hover:bg-[#011537] text-[#FAF8F5] font-semibold py-10 px-6 rounded-2xl text-xl transition-colors min-h-[160px] disabled:opacity-50 ch-focus-ring"
           >
-            {isQueueing ? <><Loader className="w-8 h-8 animate-spin mx-auto mb-2" /> Entering...</> : 'Enter Reassignment Queue'}
+            {isQueueing ? <><Loader className="w-7 h-7 animate-spin mx-auto mb-2" /> Entering</> : 'Enter reassignment queue'}
           </button>
         </div>
       </div>

@@ -23,16 +23,21 @@ function RootRedirect() {
 // 404 Catch-All Page
 function NotFound() {
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center text-center px-6">
-      <div className="w-20 h-20 bg-[#F3EFF9] text-[#5E4791] rounded-3xl flex items-center justify-center text-3xl font-black mb-6 shadow-sm border border-[#E7DFF3]">
-        !?
+    <div className="ch-paper min-h-[100dvh] flex flex-col items-center justify-center text-center px-6">
+      <div className="w-20 h-20 bg-[#CFE4EB] text-[#005682] rounded-2xl flex items-center justify-center font-display text-3xl mb-8 border border-[#EDE7DE]">
+        404
       </div>
-      <h1 className="text-4xl sm:text-5xl font-black text-[#0F172A] mb-4 tracking-tight">Lost in the Circus?</h1>
-      <h2 className="text-xl font-bold text-gray-500 mb-8 max-w-md">
-        The page you are looking for doesn't exist, has been moved, or you don't have permission to view it.
-      </h2>
-      <a href="/" className="px-8 py-4 bg-[#0F172A] text-white font-black rounded-xl hover:bg-gray-800 transition-all shadow-lg active:scale-95">
-        Return to Safety
+      <h1 className="font-display text-[44px] sm:text-[56px] leading-[1.05] text-[#12142A] mb-4 max-w-xl tracking-tight">
+        This page isn't on the map.
+      </h1>
+      <p className="text-[#58534C] font-medium text-base mb-10 max-w-md leading-relaxed">
+        The URL you requested doesn't exist, has been moved, or you don't have permission to view it.
+      </p>
+      <a
+        href="/"
+        className="px-8 py-3.5 bg-[#12142A] text-[#FAF8F5] font-semibold rounded-xl hover:bg-[#011537] transition-colors ch-focus-ring"
+      >
+        Return to dashboard
       </a>
     </div>
   );
