@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Loader, MailCheck, KeyRound } from 'lucide-react';
+import { Loader, MailCheck, KeyRound, Building2 } from 'lucide-react';
+import { useFeatureFlag, FEATURES } from '../lib/integrations/featureFlags';
+import { getOktaAdapter } from '../lib/integrations';
 
 function ShieldMark({ className = 'w-14 h-14' }) {
   return (
@@ -32,8 +34,17 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const { user, loginWithMagicLink, loginWithPin } = useAuth();
+  const { user, loginWithMagicLink, loginWithPin, loginWithOkta } = useAuth();
   const navigate = useNavigate();
+
+  // Okta SSO button visibility requires both the feature flag AND a
+  // configured adapter (env var / Supabase SSO provider wired up).
+  // This prevents an empty button appearing in environments where the
+  // flag is on but credentials have not yet been provisioned.
+  const oktaEnabled = useFeatureFlag(FEATURES.OKTA_SSO);
+  const oktaAdapter = getOktaAdapter();
+  const showOktaButton = oktaEnabled && oktaAdapter.isConfigured();
+
 
   useEffect(() => {
     if (user) {
@@ -152,6 +163,35 @@ export function Login() {
                 )}
               </button>
             </form>
+          )}
+
+          {!success && showOktaButton && (
+            <div className="mt-6">
+              {/*
+                Divider + Okta button. Only rendered when the `okta_sso`
+                feature flag is on AND the adapter reports itself
+                configured — see showOktaButton computation above.
+              */}
+              <div className="flex items-center gap-3 my-4">
+                <span className="flex-1 h-px bg-gray-200" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">or</span>
+                <span className="flex-1 h-px bg-gray-200" />
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  setError('');
+                  try {
+                    await loginWithOkta();
+                  } catch (err) {
+                    setError(err.message || 'Okta login failed.');
+                  }
+                }}
+                className="w-full py-3 rounded-xl font-semibold border border-[#12142A] text-[#12142A] hover:bg-[#12142A] hover:text-[#FAF8F5] transition-colors flex items-center justify-center gap-2"
+              >
+                <Building2 className="w-5 h-5" /> Sign in with Okta
+              </button>
+            </div>
           )}
 
           {!success && (
