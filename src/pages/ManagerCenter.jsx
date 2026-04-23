@@ -67,10 +67,6 @@ export function ManagerCenter() {
   const [statsStart, setStatsStart] = useState('');
   const [statsEnd, setStatsEnd] = useState('');
 
-  useEffect(() => { updateDateRange('this_week'); }, []);
-  useEffect(() => { if (activeTab === 'team') loadMySchedule(); }, [activeTab, scheduleDate]);
-  useEffect(() => { if (activeTab === 'stats') loadStatistics(); }, [activeTab, statsStart, statsEnd]);
-
   const updateDateRange = (preset) => {
     setStatsPreset(preset);
     const now = new Date();
@@ -150,6 +146,14 @@ export function ManagerCenter() {
     }
     setSavingSchedule(false);
   };
+
+  useEffect(() => { updateDateRange('this_week'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeTab === 'team') loadMySchedule();
+  }, [activeTab, scheduleDate, user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeTab === 'stats') loadStatistics();
+  }, [activeTab, statsStart, statsEnd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDispatchComplete = async () => {
     setSelectedIC(null);

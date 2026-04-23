@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { CircleCheck, User, Calendar, Loader, CircleAlert as AlertCircle, X, Link as LinkIcon } from 'lucide-react';
-import toast from 'react-hot-toast';
 import { useDispatchActions } from '../../hooks/useDispatchActions';
 
 export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComplete, getDualTimes, timeZone }) {

@@ -11,7 +11,7 @@ export function useDispatchActions() {
   const dispatchIC = async (slotId, icId, zoomLink) => {
     setIsDispatching(true);
     try {
-      const { data, error } = await supabase.rpc('manager_dispatch_ic', {
+      const { error } = await supabase.rpc('manager_dispatch_ic', {
         p_slot_id: slotId,
         p_ic_id: icId,
         p_zoom_link: zoomLink || ''
@@ -33,7 +33,7 @@ export function useDispatchActions() {
   const enterQueue = async (icId) => {
     setIsQueueing(true);
     try {
-      const { data, error } = await supabase.rpc('enter_ic_queue', { p_ic_id: icId });
+      const { error } = await supabase.rpc('enter_ic_queue', { p_ic_id: icId });
       
       if (error) throw error;
       
@@ -51,7 +51,7 @@ export function useDispatchActions() {
   const exitQueue = async (icId) => {
     setIsQueueing(true);
     try {
-      const { data, error } = await supabase.rpc('exit_ic_queue', { p_ic_id: icId });
+      const { error } = await supabase.rpc('exit_ic_queue', { p_ic_id: icId });
       
       if (error) throw error;
       
@@ -69,7 +69,7 @@ export function useDispatchActions() {
   const acceptMatch = async ({ slotId, icId, icEmail, managerEmail, patientIdentifier, startTime, tierRank }) => {
     setIsAccepting(true);
     try {
-      const { data, error } = await supabase.rpc('ic_accept_match', {
+      const { error } = await supabase.rpc('ic_accept_match', {
         p_slot_id: slotId,
         p_ic_id: icId,
         p_ic_email: icEmail,
@@ -95,7 +95,7 @@ export function useDispatchActions() {
   const rejectMatch = async (slotId, icId) => {
     setIsRejecting(true);
     try {
-      const { data, error } = await supabase.rpc('reject_or_cancel_match', {
+      const { error } = await supabase.rpc('reject_or_cancel_match', {
         p_slot_id: slotId,
         p_ic_id: icId
       });

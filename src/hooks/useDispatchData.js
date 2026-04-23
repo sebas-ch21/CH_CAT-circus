@@ -1,19 +1,16 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import toast from 'react-hot-toast';
 
 export function useDispatchData() {
   const [queue, setQueue] = useState([]);
   const [openSlots, setOpenSlots] = useState([]);
   const [scheduledSlots, setScheduledSlots] = useState([]);
-  const intervalRef = useRef(null);
 
   const fetchData = useCallback(async () => {
-    // 1. Trigger cleanup strictly checking for errors
-    const { error: cleanupError } = await supabase.rpc('cleanup_stale_data');
-    if (cleanupError) {
-      console.error('[Supabase Error]:', cleanupError);
-      toast.error(cleanupError.message);
-    }
+    supabase.rpc('cleanup_stale_data').then(({ error: cleanupError }) => {
+      if (cleanupError) console.error('[Supabase Error]:', cleanupError);
+    });
 
     // 2. Fetch independent tables to avoid RLS relational query crashes
     const [
