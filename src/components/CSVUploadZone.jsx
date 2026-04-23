@@ -12,6 +12,8 @@ export function CSVUploadZone({ onUpload, title, description, expectedColumns })
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
+        transformHeader: (h) => h.trim().toLowerCase(),
+        transform: (v) => (typeof v === 'string' ? v.trim() : v),
         complete: (results) => {
           if (results.data.length === 0) {
             reject('CSV file is empty');
@@ -20,7 +22,7 @@ export function CSVUploadZone({ onUpload, title, description, expectedColumns })
 
           const firstRow = results.data[0];
           const missingColumns = expectedColumns.filter(
-            (col) => !(col in firstRow)
+            (col) => !(col.toLowerCase() in firstRow)
           );
 
           if (missingColumns.length > 0) {

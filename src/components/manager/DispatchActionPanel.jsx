@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { CircleCheck, User, Calendar, Loader, CircleAlert as AlertCircle, X, Link as LinkIcon } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import toast from 'react-hot-toast';
+import { useDispatchActions } from '../../hooks/useDispatchActions';
 
 export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComplete, getDualTimes, timeZone }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [zoomLinkInput, setZoomLinkInput] = useState('');
-  const [dispatching, setDispatching] = useState(false);
+  const { isDispatching, dispatchIC } = useDispatchActions();
 
   const openConfirmModal = () => {
     setZoomLinkInput(selectedSlot?.zoom_link || '');
@@ -15,28 +14,17 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
 
   const executeDispatch = async () => {
     if (!selectedIC || !selectedSlot) return;
-    setDispatching(true);
-    try {
-      // ONE ATOMIC CALL: The database securely handles the slot, the profile, and the queue cleanup.
-      const { error } = await supabase.rpc('manager_dispatch_ic', {
-        p_slot_id: selectedSlot.id,
-        p_ic_id: selectedIC.ic_id,
-        p_zoom_link: zoomLinkInput || selectedSlot.zoom_link || ''
-      });
-      
-      if (error) throw error;
-
-      toast.success('Dispatched! Awaiting IC Confirmation.');
+    
+    const { success } = await dispatchIC(
+      selectedSlot.id,
+      selectedIC.ic_id,
+      zoomLinkInput || selectedSlot.zoom_link || ''
+    );
+    
+    if (success) {
       setShowConfirmModal(false);
-      
       // Force UI sync
       if (onDispatchComplete) onDispatchComplete();
-    } catch (err) {
-      const msg = err?.message || err?.details || 'Dispatch failed. Try again.';
-      toast.error(msg);
-      console.error('Dispatch RPC error:', err);
-    } finally {
-      setDispatching(false);
     }
   };
 
@@ -92,7 +80,7 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
               <h2 className="text-xl font-black text-[#0F172A] flex items-center gap-2">
                 <AlertCircle className="w-6 h-6 text-[#007C8C]" /> Confirm Assignment
               </h2>
-              <button onClick={() => setShowConfirmModal(false)} disabled={dispatching} className="text-gray-400 hover:text-gray-900 transition-colors">
+              <button onClick={() => setShowConfirmModal(false)} disabled={isDispatching} className="text-gray-400 hover:text-gray-900 transition-colors">
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -124,9 +112,9 @@ export function DispatchActionPanel({ selectedIC, selectedSlot, onDispatchComple
             </div>
 
             <div className="p-6 flex gap-3 bg-gray-50 border-t border-gray-100">
-              <button onClick={() => setShowConfirmModal(false)} disabled={dispatching} className="flex-1 py-4 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-100 transition-colors">Cancel</button>
-              <button onClick={executeDispatch} disabled={dispatching} style={{ backgroundColor: '#0F172A', color: '#ffffff' }} className="flex-1 py-4 rounded-xl font-black shadow-lg hover:opacity-90 transition-opacity flex justify-center items-center gap-2">
-                {dispatching ? <><Loader className="w-5 h-5 animate-spin" /> Routing...</> : 'Route IC Now'}
+              <button onClick={() => setShowConfirmModal(false)} disabled={isDispatching} className="flex-1 py-4 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-100 transition-colors">Cancel</button>
+              <button onClick={executeDispatch} disabled={isDispatching} style={{ backgroundColor: '#0F172A', color: '#ffffff' }} className="flex-1 py-4 rounded-xl font-black shadow-lg hover:opacity-90 transition-opacity flex justify-center items-center gap-2">
+                {isDispatching ? <><Loader className="w-5 h-5 animate-spin" /> Routing...</> : 'Route IC Now'}
               </button>
             </div>
           </div>

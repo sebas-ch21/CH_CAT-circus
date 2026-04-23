@@ -34,6 +34,20 @@ function getDualTimes(isoString, tz) {
   };
 }
 
+const getWeekDates = (dateStr) => {
+  const [year, month, day] = dateStr.split('-');
+  const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const dayOfWeek = d.getUTCDay() || 7; 
+  d.setUTCDate(d.getUTCDate() - dayOfWeek + 1);
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+     const cd = new Date(d);
+     cd.setUTCDate(d.getUTCDate() + i);
+     dates.push(cd.toISOString().split('T')[0]);
+  }
+  return dates;
+};
+
 export function ManagerCenter() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('dispatch');
@@ -52,10 +66,6 @@ export function ManagerCenter() {
   const [statsPreset, setStatsPreset] = useState('this_week');
   const [statsStart, setStatsStart] = useState('');
   const [statsEnd, setStatsEnd] = useState('');
-
-  useEffect(() => { updateDateRange('this_week'); }, []);
-  useEffect(() => { if (activeTab === 'team') loadMySchedule(); }, [activeTab, scheduleDate]);
-  useEffect(() => { if (activeTab === 'stats') loadStatistics(); }, [activeTab, statsStart, statsEnd]);
 
   const updateDateRange = (preset) => {
     setStatsPreset(preset);
@@ -89,26 +99,61 @@ export function ManagerCenter() {
 
   const loadMySchedule = async () => {
     if (!user?.email) return;
-    const { data } = await supabase.from('manager_schedules').select('schedule_data')
-      .eq('manager_email', user.email).eq('schedule_date', scheduleDate).maybeSingle();
-    setTeamSchedule(data?.schedule_data || {});
+    const dates = getWeekDates(scheduleDate);
+    const { data } = await supabase.from('manager_schedules')
+      .select('schedule_date, schedule_data')
+      .eq('manager_email', user.email)
+      .gte('schedule_date', dates[0])
+      .lte('schedule_date', dates[6]);
+      
+    const newSched = {};
+    dates.forEach(d => newSched[d] = {});
+    if (data) {
+      data.forEach(row => {
+        newSched[row.schedule_date] = row.schedule_data || {};
+      });
+    }
+    setTeamSchedule(newSched);
   };
 
-  const handleScheduleChange = (timeVal, val) => {
-    setTeamSchedule(prev => ({ ...prev, [timeVal]: val === '' ? '' : parseInt(val) }));
+  const handleScheduleChange = (dateStr, timeVal, val) => {
+    setTeamSchedule(prev => ({
+      ...prev,
+      [dateStr]: {
+        ...prev[dateStr],
+        [timeVal]: val === '' ? '' : parseInt(val)
+      }
+    }));
   };
 
   const saveMySchedule = async () => {
     setSavingSchedule(true);
-    await supabase.from('manager_schedules').upsert({
+    const dates = getWeekDates(scheduleDate);
+    const upserts = dates.map(dStr => ({
       manager_email: user.email,
-      schedule_date: scheduleDate,
-      schedule_data: teamSchedule,
+      schedule_date: dStr,
+      schedule_data: teamSchedule[dStr] || {},
       updated_at: new Date().toISOString()
-    }, { onConflict: 'manager_email, schedule_date' });
+    }));
+    
+    const { error } = await supabase.from('manager_schedules').upsert(upserts, { onConflict: 'manager_email, schedule_date' });
+    if (error) {
+      toast.error('Failed to save schedule');
+      console.error(error);
+    } else {
+      toast.success('Schedule saved');
+      await loadMySchedule();
+    }
     setSavingSchedule(false);
-    toast.success('Schedule saved');
   };
+
+  useEffect(() => { updateDateRange('this_week'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeTab === 'team') loadMySchedule();
+  }, [activeTab, scheduleDate, user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeTab === 'stats') loadStatistics();
+  }, [activeTab, statsStart, statsEnd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDispatchComplete = async () => {
     setSelectedIC(null);
@@ -193,7 +238,7 @@ export function ManagerCenter() {
         )}
 
         {activeTab === 'team' && (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 max-w-3xl mx-auto w-full">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 max-w-[1200px] mx-auto w-full">
             <div className="sticky top-0 z-20 bg-white pt-2 pb-4 border-b border-gray-200 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 shadow-sm">
               <div>
                 <h2 className="text-2xl font-black text-[#0F172A] flex items-center gap-2">
@@ -212,18 +257,25 @@ export function ManagerCenter() {
             </div>
             <div className="space-y-1">
               <div className="flex font-black text-[10px] text-gray-400 uppercase tracking-widest px-4 pb-2 border-b border-gray-200 mb-2">
-                <div className="flex-1">Time Interval (MT)</div>
-                <div className="w-32 text-center">Team BPS Count</div>
+                <div className="w-24">Time (MT)</div>
+                {getWeekDates(scheduleDate).map(d => {
+                  const label = new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'UTC' });
+                  return <div key={d} className="flex-1 text-center">{label}</div>;
+                })}
               </div>
               {TIME_INTERVALS.map(int => (
                 <div key={int.val} className="flex items-center p-2 hover:bg-gray-50 rounded-xl transition-colors border border-transparent hover:border-gray-100 group">
-                  <div className="flex-1 font-bold text-gray-700 text-lg group-hover:text-[#5E4791]">{int.label}</div>
-                  <input
-                    type="number" min="0" placeholder="0"
-                    value={teamSchedule[int.val] !== undefined ? teamSchedule[int.val] : ''}
-                    onChange={(e) => handleScheduleChange(int.val, e.target.value)}
-                    className="w-24 px-3 py-2 border-2 border-gray-200 rounded-xl text-center font-black text-xl text-[#5E4791] bg-white focus:border-[#5E4791] focus:ring-0 outline-none transition-colors"
-                  />
+                  <div className="w-24 font-bold text-gray-700 text-sm group-hover:text-[#5E4791] whitespace-nowrap overflow-hidden text-ellipsis">{int.label.replace(' MT', '')}</div>
+                  {getWeekDates(scheduleDate).map(d => (
+                    <div key={d} className="flex-1 px-1">
+                      <input
+                        type="number" min="0" placeholder="0"
+                        value={teamSchedule[d]?.[int.val] !== undefined ? teamSchedule[d][int.val] : ''}
+                        onChange={(e) => handleScheduleChange(d, int.val, e.target.value)}
+                        className="w-full px-2 py-2 border-2 border-transparent bg-gray-50 hover:border-gray-200 rounded-lg text-center font-black text-sm text-[#5E4791] focus:bg-white focus:border-[#5E4791] focus:ring-0 outline-none transition-colors"
+                      />
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>

@@ -9,6 +9,25 @@ export function AuthProvider({ children }) {
   const [isPinVerified, setIsPinVerified] = useState(false);
   const [isSupabaseAuth, setIsSupabaseAuth] = useState(false);
 
+  const verifyAgainstRoster = async (email, authUser = null) => {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
+
+    if (profile) {
+      const sessionUser = authUser ? { ...authUser, ...profile } : profile;
+      setUser(sessionUser);
+      if (!authUser) localStorage.setItem('charlie_test_user', JSON.stringify(sessionUser));
+    } else {
+      if (authUser) await supabase.auth.signOut();
+      setUser(null);
+      localStorage.removeItem('charlie_test_user');
+      localStorage.removeItem('charlie_pin_verified');
+    }
+  };
+
   useEffect(() => {
     const initializeAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -19,8 +38,15 @@ export function AuthProvider({ children }) {
       } else {
         const testUser = localStorage.getItem('charlie_test_user');
         if (testUser) {
-          setUser(JSON.parse(testUser));
-          if (localStorage.getItem('charlie_pin_verified')) setIsPinVerified(true);
+          try {
+            const parsed = JSON.parse(testUser);
+            if (localStorage.getItem('charlie_pin_verified')) setIsPinVerified(true);
+            // Re-verify against the roster so a demoted/removed user can't retain a stale role from localStorage.
+            await verifyAgainstRoster(parsed.email);
+          } catch {
+            localStorage.removeItem('charlie_test_user');
+            localStorage.removeItem('charlie_pin_verified');
+          }
         }
       }
       setLoading(false);
@@ -43,26 +69,8 @@ export function AuthProvider({ children }) {
     });
 
     return () => subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const verifyAgainstRoster = async (email, authUser = null) => {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('email', email.toLowerCase())
-      .maybeSingle();
-
-    if (profile) {
-      const sessionUser = authUser ? { ...authUser, ...profile } : profile;
-      setUser(sessionUser);
-      if (!authUser) localStorage.setItem('charlie_test_user', JSON.stringify(sessionUser));
-    } else {
-      if (authUser) await supabase.auth.signOut();
-      setUser(null);
-      localStorage.removeItem('charlie_test_user');
-      localStorage.removeItem('charlie_pin_verified');
-    }
-  };
 
   const loginWithMagicLink = async (email) => {
     const { error } = await supabase.auth.signInWithOtp({
@@ -81,16 +89,16 @@ export function AuthProvider({ children }) {
 
     if (profileError || !profile) throw new Error('Email not found in the roster.');
 
-    const { data: settings } = await supabase.from('app_settings').select('*');
-    const adminPin = settings?.find(s => s.setting_key === 'admin_pin')?.setting_value || 'charlieadmin';
-    const managerPin = settings?.find(s => s.setting_key === 'manager_pin')?.setting_value || 'charliemanager';
-
-    let isValid = false;
-    if (profile.role === 'ADMIN' && pin === adminPin) isValid = true;
-    else if (profile.role === 'MANAGER' && pin === managerPin) isValid = true;
-    else if (profile.role === 'IC') isValid = true;
-
-    if (!isValid) throw new Error('Invalid PIN for this role.');
+    if (profile.role === 'IC') {
+      // ICs don't need a PIN; their identity comes from the magic-link or trusted device.
+    } else {
+      const { data: ok, error: rpcError } = await supabase.rpc('fn_verify_pin', {
+        p_role: profile.role,
+        p_pin: pin,
+      });
+      if (rpcError) throw new Error('PIN verification failed. Please try again.');
+      if (!ok) throw new Error('Invalid PIN for this role.');
+    }
 
     await verifyAgainstRoster(email);
     setIsPinVerified(true);
@@ -98,12 +106,12 @@ export function AuthProvider({ children }) {
   };
 
   const verifyPin = async (pin, requiredRole) => {
-    const { data: settings } = await supabase.from('app_settings').select('*');
-    const adminPin = settings?.find(s => s.setting_key === 'admin_pin')?.setting_value || 'charlieadmin';
-    const managerPin = settings?.find(s => s.setting_key === 'manager_pin')?.setting_value || 'charliemanager';
-    const targetPin = requiredRole === 'ADMIN' ? adminPin : managerPin;
-
-    if (pin === targetPin) {
+    const { data: ok, error: rpcError } = await supabase.rpc('fn_verify_pin', {
+      p_role: requiredRole,
+      p_pin: pin,
+    });
+    if (rpcError) return { success: false, error: 'PIN verification failed.' };
+    if (ok) {
       setIsPinVerified(true);
       localStorage.setItem('charlie_pin_verified', 'true');
       return { success: true };
@@ -122,7 +130,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{ user, loginWithMagicLink, loginWithPin, logout, loading, isPinVerified, isSupabaseAuth, verifyPin }}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }
