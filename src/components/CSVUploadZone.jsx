@@ -85,8 +85,8 @@ export function CSVUploadZone({ onUpload, title, description, expectedColumns })
 
   return (
     <div className="w-full">
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
-      <p className="text-sm text-gray-600 mb-4">{description}</p>
+      <h3 className="font-display text-xl text-[#12142A] mb-1 tracking-tight">{title}</h3>
+      <p className="text-sm text-[#58534C] font-medium mb-4">{description}</p>
 
       <div
         onDragOver={(e) => {
@@ -95,10 +95,10 @@ export function CSVUploadZone({ onUpload, title, description, expectedColumns })
         }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
-        className={`relative border-2 border-dashed rounded-lg p-8 text-center transition ${
+        className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
           isDragOver
-            ? 'border-primary-500 bg-primary-50'
-            : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+            ? 'border-[#005682] bg-[#CFE4EB]/40'
+            : 'border-[#D7D1C8] bg-[#FAF8F5] hover:border-[#A8C8C2]'
         }`}
       >
         <input
@@ -110,33 +110,32 @@ export function CSVUploadZone({ onUpload, title, description, expectedColumns })
 
         <div className="flex flex-col items-center gap-3">
           <Upload
-            className={`w-8 h-8 ${
-              isDragOver ? 'text-primary-600' : 'text-gray-400'
-            }`}
+            className={`w-8 h-8 ${isDragOver ? 'text-[#005682]' : 'text-[#A29A8E]'}`}
+            strokeWidth={1.8}
           />
           <div>
-            <p className="font-medium text-gray-900">
+            <p className="font-semibold text-[#12142A]">
               Drag and drop your CSV here
             </p>
-            <p className="text-sm text-gray-600">or click to browse</p>
+            <p className="text-sm text-[#58534C] font-medium">or click to browse</p>
           </div>
         </div>
       </div>
 
       {status && (
         <div
-          className={`mt-3 flex gap-2 p-3 rounded-lg ${
+          className={`mt-3 flex gap-2 p-3 rounded-xl border ${
             status === 'success'
-              ? 'bg-green-50 text-green-700 border border-green-200'
-              : 'bg-red-50 text-red-700 border border-red-200'
+              ? 'bg-[#E8F0EE] text-[#335649] border-[#A8C8C2]'
+              : 'bg-[#FDEBEC] text-[#9F2F2D] border-[#F2C9CC]'
           }`}
         >
           {status === 'success' ? (
-            <CheckCircle className="w-5 h-5 flex-shrink-0" />
+            <CheckCircle className="w-5 h-5 flex-shrink-0" strokeWidth={1.8} />
           ) : (
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <AlertCircle className="w-5 h-5 flex-shrink-0" strokeWidth={1.8} />
           )}
-          <p className="text-sm">{message}</p>
+          <p className="text-sm font-medium">{message}</p>
         </div>
       )}
     </div>
