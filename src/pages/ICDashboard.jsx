@@ -4,49 +4,69 @@ import { TopNav } from '../components/TopNav';
 import { CircleCheck as CheckCircle2, Loader, Info, Circle as XCircle, Video, Clock, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { useDispatchActions } from '../hooks/useDispatchActions';
 
 export function ICDashboard() {
   const { user } = useAuth();
   const [assignment, setAssignment] = useState(null);
   const [inQueue, setInQueue] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
+  const { isQueueing, enterQueue, exitQueue, isAccepting, acceptMatch, isRejecting, rejectMatch } = useDispatchActions();
   const [timeLeft, setTimeLeft] = useState(300);
   const [profileTier, setProfileTier] = useState(3);
   const pollRef = useRef(null);
 
   const checkStatus = useCallback(async () => {
-    if (!user?.id || actionLoading) return;
+    if (!user?.id || isAccepting || isRejecting || isQueueing) return;
     try {
-      const { data: profile } = await supabase
+      const { data: profile, error: pError } = await supabase
         .from('profiles').select('tier_rank').eq('id', user.id).maybeSingle();
+        
+      if (pError) { console.error('[Supabase Error]:', pError); toast.error(pError.message); }
       if (profile) setProfileTier(profile.tier_rank);
 
-      const { data: slotData } = await supabase
+      const { data: slotData, error: sError } = await supabase
         .from('bps_slots')
         .select('*')
         .eq('assigned_ic_id', user.id)
         .in('status', ['ASSIGNED', 'CONFIRMED'])
         .limit(1);
 
+      if (sError) { console.error('[Supabase Error]:', sError); toast.error(sError.message); }
+
       const activeSlot = slotData?.[0] || null;
       setAssignment(activeSlot);
 
-      const { data: queueData } = await supabase
+      const { data: queueData, error: qError } = await supabase
         .from('queue_entries').select('id').eq('ic_id', user.id).limit(1);
+
+      if (qError) { console.error('[Supabase Error]:', qError); toast.error(qError.message); }
 
       if (activeSlot) {
         setInQueue(false);
       } else {
         setInQueue(queueData && queueData.length > 0);
       }
-    } catch (_) {}
-  }, [user?.id, actionLoading]);
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message);
+    }
+  }, [user?.id, isAccepting, isRejecting, isQueueing]);
 
   useEffect(() => {
     checkStatus();
-    pollRef.current = setInterval(checkStatus, 3000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    const channel = supabase.channel('ic_dashboard_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bps_slots', filter: `assigned_ic_id=eq.${user?.id}` }, () => {
+        checkStatus();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'queue_entries', filter: `ic_id=eq.${user?.id}` }, () => {
+        checkStatus();
+      })
+      .subscribe();
+
+    return () => { 
+      supabase.removeChannel(channel);
+    };
   }, [checkStatus]);
 
   useEffect(() => {
@@ -61,72 +81,33 @@ export function ICDashboard() {
   }, [assignment]);
 
   const handleEnterQueue = async () => {
-    setLoading(true);
-    try {
-      const { error } = await supabase.rpc('enter_ic_queue', { p_ic_id: user.id });
-      if (error) throw error;
-      toast.success('Entered Queue');
-      await checkStatus();
-    } catch (_) {
-      toast.error('Failed to enter queue');
-    } finally {
-      setLoading(false);
-    }
+    const { success } = await enterQueue(user.id);
+    if (success) await checkStatus();
   };
 
   const handleExitQueue = async () => {
-    setLoading(true);
-    try {
-      const { error } = await supabase.rpc('exit_ic_queue', { p_ic_id: user.id });
-      if (error) throw error;
-      toast.success('Exited Queue');
-      await checkStatus();
-    } catch (_) {
-      toast.error('Failed to exit queue');
-    } finally {
-      setLoading(false);
-    }
+    const { success } = await exitQueue(user.id);
+    if (success) await checkStatus();
   };
 
   const handleConfirmReceipt = async () => {
-    if (actionLoading || !assignment) return;
-    setActionLoading(true);
-    try {
-      const { error } = await supabase.rpc('ic_accept_match', {
-        p_slot_id: assignment.id,
-        p_ic_id: user.id,
-        p_ic_email: user.email,
-        p_manager_email: assignment.host_manager || 'Unknown',
-        p_patient_identifier: assignment.patient_identifier,
-        p_start_time: assignment.start_time,
-        p_tier_rank: profileTier
-      });
-      if (error) throw error;
-      toast.success('Match Confirmed!');
-      await checkStatus();
-    } catch (_) {
-      toast.error('Failed to confirm. Assignment may have expired.');
-    } finally {
-      setActionLoading(false);
-    }
+    if (isAccepting || !assignment) return;
+    const { success } = await acceptMatch({
+      slotId: assignment.id,
+      icId: user.id,
+      icEmail: user.email,
+      managerEmail: assignment.host_manager || 'Unknown',
+      patientIdentifier: assignment.patient_identifier,
+      startTime: assignment.start_time,
+      tierRank: profileTier
+    });
+    if (success) await checkStatus();
   };
 
   const handleRejectAssignment = async () => {
-    if (actionLoading || !assignment) return;
-    setActionLoading(true);
-    try {
-      const { error } = await supabase.rpc('reject_or_cancel_match', {
-        p_slot_id: assignment.id,
-        p_ic_id: user.id
-      });
-      if (error) throw error;
-      toast.success('Assignment rejected. Re-entered queue.');
-      await checkStatus();
-    } catch (_) {
-      toast.error('Failed to reject assignment.');
-    } finally {
-      setActionLoading(false);
-    }
+    if (isRejecting || !assignment) return;
+    const { success } = await rejectMatch(assignment.id, user.id);
+    if (success) await checkStatus();
   };
 
   const formatMinutes = (seconds) => {
@@ -160,14 +141,14 @@ export function ICDashboard() {
             <div className="space-y-3">
               <button
                 onClick={handleConfirmReceipt}
-                disabled={actionLoading || timeLeft <= 0}
+                disabled={isAccepting || isRejecting || timeLeft <= 0}
                 className="w-full bg-[#059669] hover:bg-[#047857] text-white font-bold py-5 px-6 rounded-2xl text-xl transition-all flex items-center justify-center gap-3 shadow-lg disabled:opacity-50"
               >
-                {actionLoading ? <><Loader className="w-6 h-6 animate-spin" />Confirming...</> : 'Accept & View Zoom Link'}
+                {isAccepting ? <><Loader className="w-6 h-6 animate-spin" />Confirming...</> : 'Accept & View Zoom Link'}
               </button>
               <button
                 onClick={handleRejectAssignment}
-                disabled={actionLoading}
+                disabled={isAccepting || isRejecting}
                 className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-4 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
               >
                 <X className="w-5 h-5" /> Reject & Return to Queue
@@ -204,10 +185,10 @@ export function ICDashboard() {
             </div>
             <button
               onClick={handleEnterQueue}
-              disabled={loading}
+              disabled={isQueueing}
               className="mt-8 w-full bg-[#0F172A] hover:bg-gray-800 text-white font-bold py-6 px-6 rounded-2xl text-lg transition-all shadow-lg disabled:opacity-50"
             >
-              {loading ? 'Entering Queue...' : 'Patient No-Show: Re-enter Queue'}
+              {isQueueing ? 'Entering Queue...' : 'Patient No-Show: Re-enter Queue'}
             </button>
           </div>
         </div>
@@ -228,10 +209,10 @@ export function ICDashboard() {
             <p className="text-gray-600 mb-8">Waiting for manager dispatch. Do not close this page.</p>
             <button
               onClick={handleExitQueue}
-              disabled={loading}
+              disabled={isQueueing}
               className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold py-6 px-6 rounded-2xl text-lg transition-all flex items-center justify-center gap-3 shadow-sm disabled:opacity-50"
             >
-              {loading ? <Loader className="w-6 h-6 animate-spin" /> : <><XCircle className="w-6 h-6" /> Exit Queue</>}
+              {isQueueing ? <Loader className="w-6 h-6 animate-spin" /> : <><XCircle className="w-6 h-6" /> Exit Queue</>}
             </button>
           </div>
         </div>
@@ -253,10 +234,10 @@ export function ICDashboard() {
           </div>
           <button
             onClick={handleEnterQueue}
-            disabled={loading}
+            disabled={isQueueing}
             className="w-full bg-[#0F172A] hover:bg-gray-800 text-white font-bold py-10 px-6 rounded-3xl text-xl transition-all shadow-2xl min-h-[160px] disabled:opacity-50"
           >
-            {loading ? <><Loader className="w-8 h-8 animate-spin mx-auto mb-2" /> Entering...</> : 'Enter Reassignment Queue'}
+            {isQueueing ? <><Loader className="w-8 h-8 animate-spin mx-auto mb-2" /> Entering...</> : 'Enter Reassignment Queue'}
           </button>
         </div>
       </div>

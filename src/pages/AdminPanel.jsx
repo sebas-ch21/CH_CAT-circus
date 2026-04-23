@@ -175,17 +175,46 @@ export function AdminPanel() {
 
   const addManager = (timeVal) => {
     setPlanData(prev => {
+      const row = prev[timeVal] || { override: '', assignments: [] };
+      const totalBps = consolidatedTotals[timeVal] || 0;
+      const calcSuggested = totalBps <= 12 ? 0 : Math.ceil(totalBps * (calcPercentage / 100));
+      const targetOverflow = row.override !== '' ? parseInt(row.override) : calcSuggested;
+      
+      const currentFilled = row.assignments.reduce((sum, a) => sum + (parseInt(a.count)||0), 0);
+      
+      if (currentFilled + 1 > targetOverflow) {
+        toast.error('Cannot allocate slots beyond total overflow slots needed.');
+        return prev;
+      }
+
       const updated = { ...prev };
-      updated[timeVal] = updated[timeVal] || { override: '', assignments: [] };
-      updated[timeVal].assignments.push({ email: '', count: 1 });
+      updated[timeVal] = { ...row, assignments: [...row.assignments, { email: '', count: 1 }] };
       return updated;
     });
   };
 
   const updateManager = (timeVal, idx, field, value) => {
     setPlanData(prev => {
+      const row = prev[timeVal] || { override: '', assignments: [] };
+      const totalBps = consolidatedTotals[timeVal] || 0;
+      const calcSuggested = totalBps <= 12 ? 0 : Math.ceil(totalBps * (calcPercentage / 100));
+      const targetOverflow = row.override !== '' ? parseInt(row.override) : calcSuggested;
+      
+      const currentFilled = row.assignments.reduce((sum, a) => sum + (parseInt(a.count)||0), 0);
+      const oldCount = parseInt(row.assignments[idx].count) || 0;
+      
+      if (field === 'count') {
+        const newCount = parseInt(value);
+        if (currentFilled - oldCount + newCount > targetOverflow) {
+          toast.error('Cannot allocate slots beyond total overflow slots needed.');
+          return prev;
+        }
+      }
+
       const updated = { ...prev };
-      updated[timeVal].assignments[idx][field] = field === 'count' ? parseInt(value) : value;
+      const newAssignments = [...row.assignments];
+      newAssignments[idx] = { ...newAssignments[idx], [field]: field === 'count' ? parseInt(value) : value };
+      updated[timeVal] = { ...row, assignments: newAssignments };
       return updated;
     });
   };
@@ -239,6 +268,18 @@ export function AdminPanel() {
     } else {
       await fetchSlots(); 
       setPublishMessage({ type: 'success', text: `Success! Added ${slotsToInsert.length} slots to live dispatch.` });
+      
+      // Post-publish: reset overflows to 0
+      const emptyPlan = {};
+      TIME_INTERVALS.forEach(int => {
+        emptyPlan[int.val] = { override: '0', assignments: [] };
+      });
+      setPlanData(emptyPlan);
+      
+      await supabase.from('daily_capacity_plans').upsert({
+        plan_date: selectedDate,
+        plan_data: { calcPercentage, intervals: emptyPlan }
+      }, { onConflict: 'plan_date' });
     }
     setPublishing(false);
     setTimeout(() => setPublishMessage(null), 5000);
