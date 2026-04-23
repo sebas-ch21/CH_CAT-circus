@@ -147,7 +147,7 @@ export function ManagerCenter() {
     setSavingSchedule(false);
   };
 
-  useEffect(() => { updateDateRange('this_week'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { updateDateRange('this_week'); }, []);
   useEffect(() => {
     if (activeTab === 'team') loadMySchedule();
   }, [activeTab, scheduleDate, user?.email]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -87,7 +87,7 @@ export function useCapacityPlanner(selectedDate) {
     let loadedCalc = 30;
 
     if (plan && plan.plan_data) {
-      if (plan.plan_data.hasOwnProperty('calcPercentage')) {
+      if (Object.prototype.hasOwnProperty.call(plan.plan_data, 'calcPercentage')) {
         loadedCalc = plan.plan_data.calcPercentage;
         loadedIntervals = plan.plan_data.intervals;
       } else {
