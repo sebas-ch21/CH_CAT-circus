@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(grep -E \"^[A-Z]:\\\\\\\\\\\\\\\\|^/\")",
+      "Bash(grep -A1 \"oktaMockAdapter\\\\|calendar\\\\\\\\\\\\\\\\mockAdapter\\\\|AuthContext.jsx\\\\|oktaAdapter\\\\.js\\\\|googleAdapter\\\\.js\\\\|liveAdapter\\\\.js\\\\|integrations\")",
+      "Bash(grep -B1 -A4 \"oktaMockAdapter\\\\.js\\\\|googleAdapter\\\\.js\\\\|calendar\\\\\\\\\\\\\\\\mockAdapter\\\\.js\")",
+      "Bash(npm test *)",
+      "Bash(git fetch *)",
+      "Bash(git stash *)",
+      "Bash(git merge *)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(grep -n *)",
+      "Bash(npx eslint *)",
+      "Bash(gh pr create --title 'feat: integration scaffolding + IC→Manager→Admin hierarchy + handoff docs' --body ' *)",
+      "Bash(where gh.exe)",
+      "Bash(command -v gh)",
+      "PowerShell(Get-Command gh -ErrorAction SilentlyContinue)",
+      "PowerShell($paths = @\\(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\", \"C:\\\\Program Files \\(x86\\)\\\\GitHub CLI\\\\gh.exe\", \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\\\\gh.exe\", \"$env:USERPROFILE\\\\scoop\\\\shims\\\\gh.exe\", \"$env:USERPROFILE\\\\AppData\\\\Local\\\\Microsoft\\\\WinGet\\\\Packages\\\\GitHub.cli_Microsoft.Winget.Source_8wekyb3d8bbwe\\\\gh.exe\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { Write-Output \"FOUND: $p\" } }; Get-ChildItem \"$env:USERPROFILE\\\\AppData\\\\Local\\\\Microsoft\\\\WinGet\\\\Packages\\\\\" -Filter \"gh.exe\" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 3 -ExpandProperty FullName)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)",
+      "Bash(env)",
+      "Bash(git credential *)"
+    ]
+  }
+}
