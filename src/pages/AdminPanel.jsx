@@ -2,22 +2,23 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
 import { CSVUploadZone } from '../components/CSVUploadZone';
-import { 
-  Users, 
-  Calendar as CalendarIcon, 
-  ShieldCheck, 
-  Search, 
-  Trash2, 
-  CircleAlert as AlertCircle, 
-  CircleCheck as CheckCircle, 
-  Loader, 
-  Eye, 
-  EyeOff, 
-  Plus, 
-  X, 
-  ArrowRight, 
-  TableProperties, 
-  UserPlus 
+import {
+  Users,
+  Calendar as CalendarIcon,
+  ShieldCheck,
+  Search,
+  Trash2,
+  CircleAlert as AlertCircle,
+  CircleCheck as CheckCircle,
+  Loader,
+  Eye,
+  EyeOff,
+  Lock,
+  Plus,
+  X,
+  ArrowRight,
+  TableProperties,
+  UserPlus
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -79,19 +80,14 @@ export function AdminPanel() {
   const [isAddingHeadcount, setIsAddingHeadcount] = useState(false);
   const [addHeadcountError, setAddHeadcountError] = useState(null);
 
-  // Passcodes
-  const [currentAdminPin, setCurrentAdminPin] = useState('charlieadmin');
+  // Passcodes — plaintext PINs are never stored on the client. Only the "set new PIN" form exists here.
   const [newAdminPin, setNewAdminPin] = useState('');
-  const [showAdminPin, setShowAdminPin] = useState(false);
   const [showNewAdminPin, setShowNewAdminPin] = useState(false);
-  const [currentManagerPin, setCurrentManagerPin] = useState('charliemanager');
   const [newManagerPin, setNewManagerPin] = useState('');
-  const [showManagerPin, setShowManagerPin] = useState(false);
   const [showNewManagerPin, setShowNewManagerPin] = useState(false);
 
   useEffect(() => {
     fetchProfiles();
-    fetchPins();
     fetchSlots();
   }, []);
 
@@ -110,16 +106,6 @@ export function AdminPanel() {
   const fetchSlots = async () => {
     const { data } = await supabase.from('bps_slots').select('*').order('start_time', { ascending: true });
     if (data) setSlots(data);
-  };
-
-  const fetchPins = async () => {
-    const { data } = await supabase.from('app_settings').select('*');
-    if (data) {
-      const a = data.find(d => d.setting_key === 'admin_pin');
-      const m = data.find(d => d.setting_key === 'manager_pin');
-      if (a) setCurrentAdminPin(a.setting_value);
-      if (m) setCurrentManagerPin(m.setting_value);
-    }
   };
 
   // --- CONSOLIDATED CAPACITY LOGIC ---
@@ -245,8 +231,9 @@ export function AdminPanel() {
         if (assign.email && assign.count > 0) {
           for (let i = 0; i < assign.count; i++) {
             const exactSlotTime = new Date(`${selectedDate}T${interval.of_val}:00`);
+            const slug = crypto.randomUUID().slice(0, 6).toUpperCase();
             slotsToInsert.push({
-              patient_identifier: `OF-${interval.of_val}-${assign.email.split('@')[0].toUpperCase()}-${Math.floor(Math.random() * 1000)}`,
+              patient_identifier: `OF-${interval.of_val}-${assign.email.split('@')[0].toUpperCase()}-${slug}`,
               start_time: exactSlotTime.toISOString(),
               host_manager: assign.email,
               status: 'OPEN'
@@ -375,28 +362,48 @@ export function AdminPanel() {
   };
   
   const handleDeleteSlot = async (id) => {
-    await supabase.from('bps_slots').delete().eq('id', id);
-    fetchSlots();
+    const { error } = await supabase.from('bps_slots').delete().eq('id', id);
+    if (error) {
+      toast.error(`Failed to delete slot: ${error.message}`);
+      return;
+    }
+    await fetchSlots();
   };
-  
+
   const handleUpdateProfile = async (id, updates) => {
-    await supabase.from('profiles').update(updates).eq('id', id);
-    fetchProfiles();
+    const { error } = await supabase.from('profiles').update(updates).eq('id', id);
+    if (error) {
+      toast.error(`Failed to update profile: ${error.message}`);
+      return;
+    }
+    await fetchProfiles();
   };
-  
+
   const handleDeleteProfile = async (id) => {
-    await supabase.from('profiles').delete().eq('id', id);
+    const { error } = await supabase.from('profiles').delete().eq('id', id);
+    if (error) {
+      toast.error(`Failed to delete profile: ${error.message}`);
+      return;
+    }
     setDeleteConfirmId(null);
-    fetchProfiles();
+    await fetchProfiles();
   };
-  
+
   const handleUpdatePin = async (role) => {
     const key = role === 'ADMIN' ? 'admin_pin' : 'manager_pin';
     const val = role === 'ADMIN' ? newAdminPin : newManagerPin;
-    if(val.length < 4) return;
-    await supabase.from('app_settings').upsert({ setting_key: key, setting_value: val }, { onConflict: 'setting_key' });
-    if(role === 'ADMIN') { setCurrentAdminPin(val); setNewAdminPin(''); }
-    else { setCurrentManagerPin(val); setNewManagerPin(''); }
+    if (val.length < 4) {
+      toast.error('PIN must be at least 4 characters');
+      return;
+    }
+    const { error } = await supabase.rpc('fn_admin_update_pin', { p_key: key, p_value: val });
+    if (error) {
+      toast.error(`Failed to update PIN: ${error.message}`);
+      return;
+    }
+    if (role === 'ADMIN') setNewAdminPin('');
+    else setNewManagerPin('');
+    toast.success('PIN updated');
   };
 
   const getTabClass = (id) => `flex-1 py-4 text-center font-bold text-sm transition-all border-b-4 focus:outline-none ${activeTab === id ? 'border-[#0F172A] text-[#0F172A] bg-gray-50' : 'border-transparent text-gray-400 hover:bg-gray-50 hover:text-gray-600'}`;
@@ -646,11 +653,9 @@ export function AdminPanel() {
                     <h3 className="text-lg font-bold text-[#0F172A]">Admin PIN</h3>
                   </div>
                   <div className="space-y-4">
-                    <div className="relative">
-                      <input type={showAdminPin ? 'text' : 'password'} value={currentAdminPin} readOnly className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none font-mono text-gray-500 font-bold pr-12" />
-                      <button type="button" onClick={() => setShowAdminPin(!showAdminPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                        {showAdminPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
+                    <div className="flex items-center gap-3 px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-500 font-semibold text-sm">
+                      <Lock className="w-4 h-4 text-gray-400" />
+                      Current PIN is hashed server-side and cannot be displayed.
                     </div>
                     <div className="flex gap-2">
                       <div className="flex-1 relative">
@@ -670,11 +675,9 @@ export function AdminPanel() {
                     <h3 className="text-lg font-bold text-[#0F172A]">Manager PIN</h3>
                   </div>
                   <div className="space-y-4">
-                    <div className="relative">
-                      <input type={showManagerPin ? 'text' : 'password'} value={currentManagerPin} readOnly className="w-full px-4 py-3 bg-white border border-[#D1ECEF] rounded-xl outline-none font-mono text-gray-500 font-bold pr-12" />
-                      <button type="button" onClick={() => setShowManagerPin(!showManagerPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                        {showManagerPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
+                    <div className="flex items-center gap-3 px-4 py-3 bg-white border border-[#D1ECEF] rounded-xl text-gray-500 font-semibold text-sm">
+                      <Lock className="w-4 h-4 text-gray-400" />
+                      Current PIN is hashed server-side and cannot be displayed.
                     </div>
                     <div className="flex gap-2">
                       <div className="flex-1 relative">

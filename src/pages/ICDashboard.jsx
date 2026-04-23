@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
 import { CircleCheck as CheckCircle2, Loader, Info, Circle as XCircle, Video, Clock, X } from 'lucide-react';
@@ -13,7 +13,6 @@ export function ICDashboard() {
   const { isQueueing, enterQueue, exitQueue, isAccepting, acceptMatch, isRejecting, rejectMatch } = useDispatchActions();
   const [timeLeft, setTimeLeft] = useState(300);
   const [profileTier, setProfileTier] = useState(3);
-  const pollRef = useRef(null);
 
   const checkStatus = useCallback(async () => {
     if (!user?.id || isAccepting || isRejecting || isQueueing) return;
@@ -70,15 +69,23 @@ export function ICDashboard() {
   }, [checkStatus]);
 
   useEffect(() => {
-    if (assignment?.status === 'ASSIGNED' && assignment.assigned_at) {
-      const assignedTime = new Date(assignment.assigned_at).getTime();
-      const timer = setInterval(() => {
-        const diff = Math.floor((300000 - (Date.now() - assignedTime)) / 1000);
-        setTimeLeft(diff > 0 ? diff : 0);
-      }, 1000);
-      return () => clearInterval(timer);
+    if (assignment?.status !== 'ASSIGNED' || !assignment.assigned_at) {
+      setTimeLeft(0);
+      return;
     }
-  }, [assignment]);
+    const assignedTime = new Date(assignment.assigned_at).getTime();
+    if (Number.isNaN(assignedTime)) {
+      setTimeLeft(0);
+      return;
+    }
+    const tick = () => {
+      const diff = Math.floor((300000 - (Date.now() - assignedTime)) / 1000);
+      setTimeLeft(diff > 0 ? diff : 0);
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [assignment?.id, assignment?.assigned_at, assignment?.status]);
 
   const handleEnterQueue = async () => {
     const { success } = await enterQueue(user.id);
