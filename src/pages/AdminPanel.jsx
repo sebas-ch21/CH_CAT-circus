@@ -63,14 +63,11 @@ export function AdminPanel() {
   const [publishing, setPublishing] = useState(false);
   const [publishMessage, setPublishMessage] = useState(null);
 
-  const [loadingStaff, setLoadingStaff] = useState(false);
-  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [, setLoadingStaff] = useState(false);
   const [staffMessage, setStaffMessage] = useState(null);
-  const [slotsMessage, setSlotsMessage] = useState(null);
 
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [pendingDuplicates, setPendingDuplicates] = useState([]);
-  const [resolvedUploadData, setResolvedUploadData] = useState([]);
 
   // Add Headcount Manually State
   const [isAddHeadcountModalOpen, setIsAddHeadcountModalOpen] = useState(false);
@@ -85,15 +82,6 @@ export function AdminPanel() {
   const [showNewAdminPin, setShowNewAdminPin] = useState(false);
   const [newManagerPin, setNewManagerPin] = useState('');
   const [showNewManagerPin, setShowNewManagerPin] = useState(false);
-
-  useEffect(() => {
-    fetchProfiles();
-    fetchSlots();
-  }, []);
-
-  useEffect(() => {
-    loadDailyData(selectedDate);
-  }, [selectedDate]);
 
   const fetchProfiles = async () => {
     const { data } = await supabase.from('profiles').select('*').order('email');
@@ -132,7 +120,7 @@ export function AdminPanel() {
     let loadedCalc = 30;
 
     if (plan && plan.plan_data) {
-      if (plan.plan_data.hasOwnProperty('calcPercentage')) {
+      if (Object.prototype.hasOwnProperty.call(plan.plan_data, 'calcPercentage')) {
         loadedCalc = plan.plan_data.calcPercentage;
         loadedIntervals = plan.plan_data.intervals;
       } else {
@@ -147,10 +135,14 @@ export function AdminPanel() {
     setPlanData(loadedIntervals);
   };
 
-  const getSuggestedCount = (timeVal, pct) => {
-    const num = consolidatedTotals[timeVal] || 0;
-    return num <= 12 ? 0 : Math.ceil(num * (pct / 100));
-  };
+  useEffect(() => {
+    fetchProfiles();
+    fetchSlots();
+  }, []);
+
+  useEffect(() => {
+    loadDailyData(selectedDate);
+  }, [selectedDate]);
 
   const updateInterval = (timeVal, field, value) => {
     setPlanData(prev => ({
