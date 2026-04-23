@@ -2,22 +2,23 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
 import { CSVUploadZone } from '../components/CSVUploadZone';
-import { 
-  Users, 
-  Calendar as CalendarIcon, 
-  ShieldCheck, 
-  Search, 
-  Trash2, 
-  CircleAlert as AlertCircle, 
-  CircleCheck as CheckCircle, 
-  Loader, 
-  Eye, 
-  EyeOff, 
-  Plus, 
-  X, 
-  ArrowRight, 
-  TableProperties, 
-  UserPlus 
+import {
+  Users,
+  Calendar as CalendarIcon,
+  ShieldCheck,
+  Search,
+  Trash2,
+  CircleAlert as AlertCircle,
+  CircleCheck as CheckCircle,
+  Loader,
+  Eye,
+  EyeOff,
+  Lock,
+  Plus,
+  X,
+  ArrowRight,
+  TableProperties,
+  UserPlus
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -79,19 +80,14 @@ export function AdminPanel() {
   const [isAddingHeadcount, setIsAddingHeadcount] = useState(false);
   const [addHeadcountError, setAddHeadcountError] = useState(null);
 
-  // Passcodes
-  const [currentAdminPin, setCurrentAdminPin] = useState('charlieadmin');
+  // Passcodes — plaintext PINs are never stored on the client. Only the "set new PIN" form exists here.
   const [newAdminPin, setNewAdminPin] = useState('');
-  const [showAdminPin, setShowAdminPin] = useState(false);
   const [showNewAdminPin, setShowNewAdminPin] = useState(false);
-  const [currentManagerPin, setCurrentManagerPin] = useState('charliemanager');
   const [newManagerPin, setNewManagerPin] = useState('');
-  const [showManagerPin, setShowManagerPin] = useState(false);
   const [showNewManagerPin, setShowNewManagerPin] = useState(false);
 
   useEffect(() => {
     fetchProfiles();
-    fetchPins();
     fetchSlots();
   }, []);
 
@@ -110,16 +106,6 @@ export function AdminPanel() {
   const fetchSlots = async () => {
     const { data } = await supabase.from('bps_slots').select('*').order('start_time', { ascending: true });
     if (data) setSlots(data);
-  };
-
-  const fetchPins = async () => {
-    const { data } = await supabase.from('app_settings').select('*');
-    if (data) {
-      const a = data.find(d => d.setting_key === 'admin_pin');
-      const m = data.find(d => d.setting_key === 'manager_pin');
-      if (a) setCurrentAdminPin(a.setting_value);
-      if (m) setCurrentManagerPin(m.setting_value);
-    }
   };
 
   // --- CONSOLIDATED CAPACITY LOGIC ---
@@ -175,17 +161,46 @@ export function AdminPanel() {
 
   const addManager = (timeVal) => {
     setPlanData(prev => {
+      const row = prev[timeVal] || { override: '', assignments: [] };
+      const totalBps = consolidatedTotals[timeVal] || 0;
+      const calcSuggested = totalBps <= 12 ? 0 : Math.ceil(totalBps * (calcPercentage / 100));
+      const targetOverflow = row.override !== '' ? parseInt(row.override) : calcSuggested;
+      
+      const currentFilled = row.assignments.reduce((sum, a) => sum + (parseInt(a.count)||0), 0);
+      
+      if (currentFilled + 1 > targetOverflow) {
+        toast.error('Cannot allocate slots beyond total overflow slots needed.');
+        return prev;
+      }
+
       const updated = { ...prev };
-      updated[timeVal] = updated[timeVal] || { override: '', assignments: [] };
-      updated[timeVal].assignments.push({ email: '', count: 1 });
+      updated[timeVal] = { ...row, assignments: [...row.assignments, { email: '', count: 1 }] };
       return updated;
     });
   };
 
   const updateManager = (timeVal, idx, field, value) => {
     setPlanData(prev => {
+      const row = prev[timeVal] || { override: '', assignments: [] };
+      const totalBps = consolidatedTotals[timeVal] || 0;
+      const calcSuggested = totalBps <= 12 ? 0 : Math.ceil(totalBps * (calcPercentage / 100));
+      const targetOverflow = row.override !== '' ? parseInt(row.override) : calcSuggested;
+      
+      const currentFilled = row.assignments.reduce((sum, a) => sum + (parseInt(a.count)||0), 0);
+      const oldCount = parseInt(row.assignments[idx].count) || 0;
+      
+      if (field === 'count') {
+        const newCount = parseInt(value);
+        if (currentFilled - oldCount + newCount > targetOverflow) {
+          toast.error('Cannot allocate slots beyond total overflow slots needed.');
+          return prev;
+        }
+      }
+
       const updated = { ...prev };
-      updated[timeVal].assignments[idx][field] = field === 'count' ? parseInt(value) : value;
+      const newAssignments = [...row.assignments];
+      newAssignments[idx] = { ...newAssignments[idx], [field]: field === 'count' ? parseInt(value) : value };
+      updated[timeVal] = { ...row, assignments: newAssignments };
       return updated;
     });
   };
@@ -216,8 +231,9 @@ export function AdminPanel() {
         if (assign.email && assign.count > 0) {
           for (let i = 0; i < assign.count; i++) {
             const exactSlotTime = new Date(`${selectedDate}T${interval.of_val}:00`);
+            const slug = crypto.randomUUID().slice(0, 6).toUpperCase();
             slotsToInsert.push({
-              patient_identifier: `OF-${interval.of_val}-${assign.email.split('@')[0].toUpperCase()}-${Math.floor(Math.random() * 1000)}`,
+              patient_identifier: `OF-${interval.of_val}-${assign.email.split('@')[0].toUpperCase()}-${slug}`,
               start_time: exactSlotTime.toISOString(),
               host_manager: assign.email,
               status: 'OPEN'
@@ -239,6 +255,18 @@ export function AdminPanel() {
     } else {
       await fetchSlots(); 
       setPublishMessage({ type: 'success', text: `Success! Added ${slotsToInsert.length} slots to live dispatch.` });
+      
+      // Post-publish: reset overflows to 0
+      const emptyPlan = {};
+      TIME_INTERVALS.forEach(int => {
+        emptyPlan[int.val] = { override: '0', assignments: [] };
+      });
+      setPlanData(emptyPlan);
+      
+      await supabase.from('daily_capacity_plans').upsert({
+        plan_date: selectedDate,
+        plan_data: { calcPercentage, intervals: emptyPlan }
+      }, { onConflict: 'plan_date' });
     }
     setPublishing(false);
     setTimeout(() => setPublishMessage(null), 5000);
@@ -334,28 +362,48 @@ export function AdminPanel() {
   };
   
   const handleDeleteSlot = async (id) => {
-    await supabase.from('bps_slots').delete().eq('id', id);
-    fetchSlots();
+    const { error } = await supabase.from('bps_slots').delete().eq('id', id);
+    if (error) {
+      toast.error(`Failed to delete slot: ${error.message}`);
+      return;
+    }
+    await fetchSlots();
   };
-  
+
   const handleUpdateProfile = async (id, updates) => {
-    await supabase.from('profiles').update(updates).eq('id', id);
-    fetchProfiles();
+    const { error } = await supabase.from('profiles').update(updates).eq('id', id);
+    if (error) {
+      toast.error(`Failed to update profile: ${error.message}`);
+      return;
+    }
+    await fetchProfiles();
   };
-  
+
   const handleDeleteProfile = async (id) => {
-    await supabase.from('profiles').delete().eq('id', id);
+    const { error } = await supabase.from('profiles').delete().eq('id', id);
+    if (error) {
+      toast.error(`Failed to delete profile: ${error.message}`);
+      return;
+    }
     setDeleteConfirmId(null);
-    fetchProfiles();
+    await fetchProfiles();
   };
-  
+
   const handleUpdatePin = async (role) => {
     const key = role === 'ADMIN' ? 'admin_pin' : 'manager_pin';
     const val = role === 'ADMIN' ? newAdminPin : newManagerPin;
-    if(val.length < 4) return;
-    await supabase.from('app_settings').upsert({ setting_key: key, setting_value: val }, { onConflict: 'setting_key' });
-    if(role === 'ADMIN') { setCurrentAdminPin(val); setNewAdminPin(''); }
-    else { setCurrentManagerPin(val); setNewManagerPin(''); }
+    if (val.length < 4) {
+      toast.error('PIN must be at least 4 characters');
+      return;
+    }
+    const { error } = await supabase.rpc('fn_admin_update_pin', { p_key: key, p_value: val });
+    if (error) {
+      toast.error(`Failed to update PIN: ${error.message}`);
+      return;
+    }
+    if (role === 'ADMIN') setNewAdminPin('');
+    else setNewManagerPin('');
+    toast.success('PIN updated');
   };
 
   const getTabClass = (id) => `flex-1 py-4 text-center font-bold text-sm transition-all border-b-4 focus:outline-none ${activeTab === id ? 'border-[#0F172A] text-[#0F172A] bg-gray-50' : 'border-transparent text-gray-400 hover:bg-gray-50 hover:text-gray-600'}`;
@@ -605,11 +653,9 @@ export function AdminPanel() {
                     <h3 className="text-lg font-bold text-[#0F172A]">Admin PIN</h3>
                   </div>
                   <div className="space-y-4">
-                    <div className="relative">
-                      <input type={showAdminPin ? 'text' : 'password'} value={currentAdminPin} readOnly className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none font-mono text-gray-500 font-bold pr-12" />
-                      <button type="button" onClick={() => setShowAdminPin(!showAdminPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                        {showAdminPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
+                    <div className="flex items-center gap-3 px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-500 font-semibold text-sm">
+                      <Lock className="w-4 h-4 text-gray-400" />
+                      Current PIN is hashed server-side and cannot be displayed.
                     </div>
                     <div className="flex gap-2">
                       <div className="flex-1 relative">
@@ -629,11 +675,9 @@ export function AdminPanel() {
                     <h3 className="text-lg font-bold text-[#0F172A]">Manager PIN</h3>
                   </div>
                   <div className="space-y-4">
-                    <div className="relative">
-                      <input type={showManagerPin ? 'text' : 'password'} value={currentManagerPin} readOnly className="w-full px-4 py-3 bg-white border border-[#D1ECEF] rounded-xl outline-none font-mono text-gray-500 font-bold pr-12" />
-                      <button type="button" onClick={() => setShowManagerPin(!showManagerPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                        {showManagerPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
+                    <div className="flex items-center gap-3 px-4 py-3 bg-white border border-[#D1ECEF] rounded-xl text-gray-500 font-semibold text-sm">
+                      <Lock className="w-4 h-4 text-gray-400" />
+                      Current PIN is hashed server-side and cannot be displayed.
                     </div>
                     <div className="flex gap-2">
                       <div className="flex-1 relative">
