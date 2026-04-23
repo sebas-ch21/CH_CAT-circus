@@ -72,6 +72,10 @@ export function AdminPanel() {
   const [newHeadcountEmail, setNewHeadcountEmail] = useState('');
   const [newHeadcountRole, setNewHeadcountRole] = useState('IC');
   const [newHeadcountTier, setNewHeadcountTier] = useState(3);
+  // Hierarchy selectors in the new-user modal. Only one of these is used,
+  // depending on the role: manager_email for ICs, admin_email for Managers.
+  const [newHeadcountManagerEmail, setNewHeadcountManagerEmail] = useState('');
+  const [newHeadcountAdminEmail, setNewHeadcountAdminEmail] = useState('');
   const [isAddingHeadcount, setIsAddingHeadcount] = useState(false);
   const [addHeadcountError, setAddHeadcountError] = useState(null);
 
@@ -84,8 +88,34 @@ export function AdminPanel() {
     const { data } = await supabase.from('profiles').select('*').order('email');
     if (data) {
       setProfiles(data);
+      // "managers" is consumed by the Consolidated Planner and by the
+      // hierarchy selectors in the roster table. Both Admins and Managers
+      // appear here because the Planner can host slots as either role.
       setManagers(data.filter(p => p.role === 'MANAGER' || p.role === 'ADMIN'));
     }
+  };
+
+  // Convenience selectors for the hierarchy dropdowns in the roster tab.
+  // Kept as derived values (instead of extra state) so they automatically
+  // refresh whenever `profiles` changes.
+  const managerOptions = profiles.filter(p => p.role === 'MANAGER');
+  const adminOptions   = profiles.filter(p => p.role === 'ADMIN');
+
+  // Maps a role change in the inline roster to a safe hierarchy payload.
+  // Without this, toggling a MANAGER → IC would leave `admin_id` populated
+  // which the DB trigger rejects. We pre-empt that by nulling invalid
+  // pointers up front.
+  const buildRoleChangeUpdate = (profile, nextRole) => {
+    const update = { role: nextRole };
+    if (nextRole === 'ADMIN') {
+      update.manager_id = null;
+      update.admin_id = null;
+    } else if (nextRole === 'MANAGER') {
+      update.manager_id = null;
+    } else if (nextRole === 'IC') {
+      update.admin_id = null;
+    }
+    return update;
   };
 
   const fetchSlots = async () => {
@@ -279,15 +309,34 @@ export function AdminPanel() {
     setStaffMessage(null);
     const duplicates = [];
     const newRows = [];
+    // `assignments` is accumulated for *all* rows (new + duplicate) that
+    // provide a `manager_email` or `admin_email` column. We submit the
+    // batch to `fn_bulk_assign_hierarchy` once roster rows exist so the
+    // SQL trigger can validate role compatibility server-side.
+    const assignments = [];
+
     for (const row of csvData) {
       if (!row.email) continue;
-      const existing = profiles.find(p => p.email?.toLowerCase() === row.email.toLowerCase());
+      const emailLc = row.email.toLowerCase();
+      const existing = profiles.find(p => p.email?.toLowerCase() === emailLc);
       if (existing) {
         duplicates.push({ old: existing, new: row });
       } else {
-        newRows.push({ email: row.email.toLowerCase(), role: row.role || 'IC', tier_rank: parseInt(row.tier_rank) || 3 });
+        newRows.push({
+          email: emailLc,
+          role: row.role || 'IC',
+          tier_rank: parseInt(row.tier_rank) || 3
+        });
+      }
+      if (row.manager_email || row.admin_email) {
+        assignments.push({
+          profile_email: emailLc,
+          manager_email: (row.manager_email || '').toLowerCase(),
+          admin_email:   (row.admin_email || '').toLowerCase()
+        });
       }
     }
+
     if (newRows.length > 0) {
       const { error } = await supabase.from('profiles').insert(newRows);
       if (error) {
@@ -296,6 +345,25 @@ export function AdminPanel() {
         setStaffMessage({ type: 'success', text: `Added ${newRows.length} new staff members.` });
       }
     }
+
+    // Apply hierarchy assignments after profiles exist. Any failures
+    // (unknown manager, wrong role, etc.) come back in the response
+    // and are surfaced to the admin as a toast so they can correct the CSV.
+    if (assignments.length > 0) {
+      const { data: bulkResult, error: bulkErr } = await supabase
+        .rpc('fn_bulk_assign_hierarchy', { assignments });
+      if (bulkErr) {
+        toast.error(`Hierarchy assignment failed: ${bulkErr.message}`);
+      } else if (bulkResult?.failures?.length) {
+        toast.error(
+          `Hierarchy: ${bulkResult.success_count} applied, ${bulkResult.failures.length} failed (see console).`
+        );
+        console.warn('Hierarchy bulk failures', bulkResult.failures);
+      } else {
+        toast.success(`Hierarchy applied for ${bulkResult?.success_count ?? assignments.length} rows.`);
+      }
+    }
+
     if (duplicates.length > 0) {
       setPendingDuplicates(duplicates);
       setShowDuplicateModal(true);
@@ -324,10 +392,22 @@ export function AdminPanel() {
       return;
     }
 
+    // Resolve optional hierarchy selectors to ids so the trigger can
+    // validate roles server-side. An unknown email simply means "do not
+    // set" here; the admin can fix it from the inline roster afterwards.
+    const managerProfile = newHeadcountRole === 'IC' && newHeadcountManagerEmail
+      ? profiles.find(p => p.email === newHeadcountManagerEmail && p.role === 'MANAGER')
+      : null;
+    const adminProfile = newHeadcountRole === 'MANAGER' && newHeadcountAdminEmail
+      ? profiles.find(p => p.email === newHeadcountAdminEmail && p.role === 'ADMIN')
+      : null;
+
     const { error } = await supabase.from('profiles').insert([{
       email: emailFormatted,
       role: newHeadcountRole,
-      tier_rank: parseInt(newHeadcountTier)
+      tier_rank: parseInt(newHeadcountTier),
+      manager_id: managerProfile?.id ?? null,
+      admin_id: adminProfile?.id ?? null
     }]);
 
     if (error) {
@@ -338,6 +418,8 @@ export function AdminPanel() {
       setNewHeadcountEmail('');
       setNewHeadcountRole('IC');
       setNewHeadcountTier(3);
+      setNewHeadcountManagerEmail('');
+      setNewHeadcountAdminEmail('');
       setIsAddHeadcountModalOpen(false);
       await fetchProfiles();
       setIsAddingHeadcount(false);
@@ -356,10 +438,19 @@ export function AdminPanel() {
   const handleUpdateProfile = async (id, updates) => {
     const { error } = await supabase.from('profiles').update(updates).eq('id', id);
     if (error) {
+      // The DB trigger can reject role / hierarchy combinations; surface
+      // the message directly so the admin can correct it.
       toast.error(`Failed to update profile: ${error.message}`);
       return;
     }
     await fetchProfiles();
+  };
+
+  // Role changes from the inline roster row need to clear out any
+  // hierarchy pointers that the new role does not allow, otherwise the
+  // trigger would reject the UPDATE. This wrapper centralises the logic.
+  const handleRoleChange = async (profile, nextRole) => {
+    await handleUpdateProfile(profile.id, buildRoleChangeUpdate(profile, nextRole));
   };
 
   const handleDeleteProfile = async (id) => {
@@ -602,8 +693,8 @@ export function AdminPanel() {
                   <CSVUploadZone
                     onUpload={handleStaffUpload}
                     title="Drop CSV data"
-                    description="Requires columns: email, role, tier_rank"
-                    expectedColumns={['email', 'role', 'tier_rank']}
+                    description="Required: email, role, tier_rank. Optional: manager_email, admin_email."
+                    expectedColumns={['email', 'role', 'tier_rank', 'manager_email', 'admin_email']}
                   />
                   {staffMessage && (
                     <div className={`mt-4 p-3 rounded-xl text-sm font-semibold flex items-center gap-2 ${
@@ -638,54 +729,96 @@ export function AdminPanel() {
                   </div>
                 </div>
                 <div className="flex-1 overflow-y-auto space-y-2 max-h-[600px]">
-                  {filteredProfiles.map((p) => (
-                    <div key={p.id} className="flex items-center gap-4 p-3 bg-white rounded-xl border border-[#EDE7DE]">
-                      <div className="flex-1 font-semibold text-[#12142A] truncate">{p.email}</div>
-                      <select
-                        value={p.role}
-                        onChange={(e) => handleUpdateProfile(p.id, { role: e.target.value })}
-                        className="bg-[#FAF8F5] border border-[#D7D1C8] rounded-lg px-2 py-1.5 text-sm font-medium w-32 text-[#12142A]"
-                      >
-                        <option value="ADMIN">Admin</option>
-                        <option value="MANAGER">Manager</option>
-                        <option value="IC">IC (Staff)</option>
-                      </select>
-                      <select
-                        value={p.tier_rank || 3}
-                        onChange={(e) => handleUpdateProfile(p.id, { tier_rank: parseInt(e.target.value) })}
-                        className="bg-[#FAF8F5] border border-[#D7D1C8] rounded-lg px-2 py-1.5 text-sm font-medium w-28 text-[#12142A]"
-                      >
-                        <option value="1">Tier 1</option>
-                        <option value="2">Tier 2</option>
-                        <option value="3">Tier 3</option>
-                      </select>
-                      <div className="w-20 flex justify-end">
-                        {deleteConfirmId === p.id ? (
-                          <div className="flex gap-1 items-center bg-[#FDEBEC] p-1 rounded-lg">
-                            <button
-                              onClick={() => handleDeleteProfile(p.id)}
-                              className="bg-[#9F2F2D] text-[#FAF8F5] px-2 py-1 rounded text-[10px] font-semibold"
-                            >
-                              Yes
-                            </button>
-                            <button
-                              onClick={() => setDeleteConfirmId(null)}
-                              className="text-[#58534C] hover:text-[#12142A] p-1"
-                            >
-                              <X className="w-4 h-4" strokeWidth={1.8} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setDeleteConfirmId(p.id)}
-                            className="p-2 text-[#A29A8E] hover:text-[#9F2F2D] rounded-lg"
+                  {filteredProfiles.map((p) => {
+                    // Hierarchy picker only surfaces the role-legal option:
+                    //  - IC       → choose a Manager
+                    //  - MANAGER  → choose an Admin (optional)
+                    //  - ADMIN    → no hierarchy picker (top of the tree)
+                    const showManagerPicker = p.role === 'IC';
+                    const showAdminPicker   = p.role === 'MANAGER';
+                    return (
+                      <div key={p.id} className="flex items-center gap-4 p-3 bg-white rounded-xl border border-[#EDE7DE]">
+                        <div className="flex-1 font-semibold text-[#12142A] truncate">{p.email}</div>
+                        <select
+                          value={p.role}
+                          onChange={(e) => handleRoleChange(p, e.target.value)}
+                          className="bg-[#FAF8F5] border border-[#D7D1C8] rounded-lg px-2 py-1.5 text-sm font-medium w-32 text-[#12142A]"
+                        >
+                          <option value="ADMIN">Admin</option>
+                          <option value="MANAGER">Manager</option>
+                          <option value="IC">IC (Staff)</option>
+                        </select>
+                        <select
+                          value={p.tier_rank || 3}
+                          onChange={(e) => handleUpdateProfile(p.id, { tier_rank: parseInt(e.target.value) })}
+                          className="bg-[#FAF8F5] border border-[#D7D1C8] rounded-lg px-2 py-1.5 text-sm font-medium w-28 text-[#12142A]"
+                        >
+                          <option value="1">Tier 1</option>
+                          <option value="2">Tier 2</option>
+                          <option value="3">Tier 3</option>
+                        </select>
+                        {showManagerPicker && (
+                          <select
+                            value={p.manager_id || ''}
+                            onChange={(e) =>
+                              handleUpdateProfile(p.id, { manager_id: e.target.value || null })
+                            }
+                            title="Assigned Manager"
+                            className="bg-[#FAF8F5] border border-[#D7D1C8] rounded-lg px-2 py-1.5 text-sm font-medium w-44 text-[#12142A]"
                           >
-                            <Trash2 className="w-4 h-4" strokeWidth={1.8} />
-                          </button>
+                            <option value="">— Manager —</option>
+                            {managerOptions.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.email.split('@')[0]}
+                              </option>
+                            ))}
+                          </select>
                         )}
+                        {showAdminPicker && (
+                          <select
+                            value={p.admin_id || ''}
+                            onChange={(e) =>
+                              handleUpdateProfile(p.id, { admin_id: e.target.value || null })
+                            }
+                            title="Assigned Admin (optional)"
+                            className="bg-[#FAF8F5] border border-[#D7D1C8] rounded-lg px-2 py-1.5 text-sm font-medium w-44 text-[#12142A]"
+                          >
+                            <option value="">— Admin (opt.) —</option>
+                            {adminOptions.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.email.split('@')[0]}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <div className="w-20 flex justify-end">
+                          {deleteConfirmId === p.id ? (
+                            <div className="flex gap-1 items-center bg-[#FDEBEC] p-1 rounded-lg">
+                              <button
+                                onClick={() => handleDeleteProfile(p.id)}
+                                className="bg-[#9F2F2D] text-[#FAF8F5] px-2 py-1 rounded text-[10px] font-semibold"
+                              >
+                                Yes
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirmId(null)}
+                                className="text-[#58534C] hover:text-[#12142A] p-1"
+                              >
+                                <X className="w-4 h-4" strokeWidth={1.8} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteConfirmId(p.id)}
+                              className="p-2 text-[#A29A8E] hover:text-[#9F2F2D] rounded-lg"
+                            >
+                              <Trash2 className="w-4 h-4" strokeWidth={1.8} />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -898,7 +1031,14 @@ export function AdminPanel() {
                   <label className="block text-[10px] font-semibold text-[#58534C] uppercase tracking-micro mb-1">Role</label>
                   <select
                     value={newHeadcountRole}
-                    onChange={(e) => setNewHeadcountRole(e.target.value)}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      setNewHeadcountRole(nextRole);
+                      // Reset any hierarchy picker that is no longer legal
+                      // for the newly-selected role.
+                      if (nextRole !== 'IC') setNewHeadcountManagerEmail('');
+                      if (nextRole !== 'MANAGER') setNewHeadcountAdminEmail('');
+                    }}
                     className="w-full px-4 py-3 bg-[#FAF8F5] border border-[#D7D1C8] rounded-xl font-semibold focus:border-[#005682] focus:bg-white focus:ring-0 outline-none text-[#12142A]"
                   >
                     <option value="ADMIN">Admin</option>
@@ -919,6 +1059,42 @@ export function AdminPanel() {
                   </select>
                 </div>
               </div>
+
+              {newHeadcountRole === 'IC' && (
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+                    Assigned Manager
+                  </label>
+                  <select
+                    value={newHeadcountManagerEmail}
+                    onChange={(e) => setNewHeadcountManagerEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-bold focus:border-[#5E4791] focus:ring-0 outline-none"
+                  >
+                    <option value="">— Select Manager —</option>
+                    {managerOptions.map((m) => (
+                      <option key={m.id} value={m.email}>{m.email}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {newHeadcountRole === 'MANAGER' && (
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+                    Assigned Admin (optional)
+                  </label>
+                  <select
+                    value={newHeadcountAdminEmail}
+                    onChange={(e) => setNewHeadcountAdminEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-bold focus:border-[#5E4791] focus:ring-0 outline-none"
+                  >
+                    <option value="">— No Admin —</option>
+                    {adminOptions.map((a) => (
+                      <option key={a.id} value={a.email}>{a.email}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {addHeadcountError && (
                 <div className="p-3 bg-[#FDEBEC] text-[#9F2F2D] text-sm font-semibold rounded-xl text-center border border-[#F2C9CC]">
