@@ -1,30 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Loader, MailCheck, KeyRound, Building2 } from 'lucide-react';
-import { useFeatureFlag, FEATURES } from '../lib/integrations/featureFlags';
-import { getOktaAdapter } from '../lib/integrations';
-
-function ShieldMark({ className = 'w-14 h-14' }) {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden="true">
-      <path
-        d="M24 4 8 9.5v12.6c0 9.9 6.8 17.12 16 20.9 9.2-3.78 16-11 16-20.9V9.5L24 4Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M16.5 20 24 27.5 31.5 20M16.5 26 24 33.5 31.5 26"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity="0.55"
-      />
-    </svg>
-  );
-}
+import { Shield, Loader, MailCheck, KeyRound } from 'lucide-react';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -33,24 +10,16 @@ export function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-
-  const { user, loginWithMagicLink, loginWithPin, loginWithOkta } = useAuth();
+  
+  const { user, loginWithMagicLink, loginWithPin } = useAuth();
   const navigate = useNavigate();
 
-  // Okta SSO button visibility requires both the feature flag AND a
-  // configured adapter (env var / Supabase SSO provider wired up).
-  // This prevents an empty button appearing in environments where the
-  // flag is on but credentials have not yet been provisioned.
-  const oktaEnabled = useFeatureFlag(FEATURES.OKTA_SSO);
-  const oktaAdapter = getOktaAdapter();
-  const showOktaButton = oktaEnabled && oktaAdapter.isConfigured();
-
-
+  // Route user to the correct dashboard mapping immediately upon login
   useEffect(() => {
     if (user) {
       if (user.role === 'ADMIN') navigate('/admin');
       else if (user.role === 'MANAGER') navigate('/manager');
-      else navigate('/dashboard');
+      else navigate('/dashboard'); // Routed to the correct IC Dashboard path
     }
   }, [user, navigate]);
 
@@ -74,140 +43,58 @@ export function Login() {
   };
 
   return (
-    <div className="ch-paper min-h-[100dvh] flex flex-col justify-center py-12 px-6 relative overflow-hidden">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-[0.04]"
-        style={{
-          backgroundImage:
-            'radial-gradient(closest-side, #005682 0%, transparent 70%), radial-gradient(closest-side, #495654 0%, transparent 70%)',
-          backgroundSize: '900px 900px, 700px 700px',
-          backgroundPosition: 'top right, bottom left',
-          backgroundRepeat: 'no-repeat',
-        }}
-      />
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center relative">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#12142A] text-[#FAF8F5] mb-6 ch-rise">
-          <ShieldMark className="w-9 h-9" />
-        </div>
-        <h1 className="font-display text-[44px] sm:text-[52px] text-[#12142A] tracking-tight">
-          Charlie Admissions
-        </h1>
-        <p className="mt-2 text-[11px] text-[#58534C] uppercase tracking-micro font-semibold">
-          Capacity Circus &middot; Dispatch
-        </p>
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-6">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+        <Shield className="w-16 h-16 text-[#0F172A] mx-auto mb-6" strokeWidth={2.5} />
+        <h2 className="text-3xl font-black text-gray-900 tracking-tight">Charlie Admissions</h2>
+        <p className="mt-2 text-sm font-medium text-gray-500 uppercase tracking-widest">Capacity Circus & Dispatch</p>
       </div>
 
-      <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-md relative">
-        <div className="ch-card p-8 sm:p-10 ch-rise">
+      <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-10 px-8 shadow-2xl rounded-3xl border border-gray-100">
           {success ? (
-            <div className="text-center p-6 bg-[#E8F0EE] rounded-xl border border-[#A8C8C2]">
-              <MailCheck className="w-10 h-10 text-[#335649] mx-auto mb-3" strokeWidth={1.8} />
-              <h3 className="font-display text-2xl text-[#12142A] mb-2">Check your inbox</h3>
-              <p className="text-sm text-[#495654] font-medium">
-                Magic sign-in link sent to <strong className="text-[#12142A]">{email}</strong>.
-              </p>
-              <button
-                onClick={() => setSuccess(false)}
-                className="mt-6 text-sm font-semibold text-[#005682] hover:text-[#011537] hover:underline"
-              >
-                Use a different email
-              </button>
+            <div className="text-center p-6 bg-green-50 rounded-xl border border-green-100 animate-in zoom-in duration-300">
+              <MailCheck className="w-12 h-12 text-green-500 mx-auto mb-4" />
+              <h3 className="text-lg font-bold text-green-900 mb-2">Check your email</h3>
+              <p className="text-sm text-green-700 font-medium">Magic login link sent to <strong>{email}</strong>.</p>
+              <button onClick={() => setSuccess(false)} className="mt-6 text-sm font-bold text-[#5E4791] hover:underline">Try a different email</button>
             </div>
           ) : (
-            <form className="space-y-5" onSubmit={handleSubmit}>
+            <form className="space-y-6" onSubmit={handleSubmit}>
               <div>
-                <label className="block text-[11px] font-semibold text-[#58534C] mb-2 uppercase tracking-micro">
-                  Email address
-                </label>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Email Address</label>
                 <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 bg-[#FAF8F5] border border-[#D7D1C8] rounded-xl font-medium text-[#12142A] placeholder:text-[#A29A8E] focus:border-[#005682] focus:bg-white outline-none transition-colors"
+                  type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-medium focus:border-[#5E4791] outline-none transition-colors"
                   placeholder="name@clinic.com"
                 />
               </div>
 
               {usePin && (
-                <div>
-                  <label className="block text-[11px] font-semibold text-[#58534C] mb-2 uppercase tracking-micro">
-                    Test PIN
-                  </label>
+                <div className="animate-in slide-in-from-top-2 duration-200">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Test PIN</label>
                   <input
-                    type="password"
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value)}
-                    className="w-full px-4 py-3 bg-[#FAF8F5] border border-[#D7D1C8] rounded-xl font-medium text-[#12142A] placeholder:text-[#A29A8E] focus:border-[#005682] focus:bg-white outline-none transition-colors"
+                    type="password" value={pin} onChange={(e) => setPin(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-medium focus:border-[#5E4791] outline-none transition-colors"
                     placeholder="Enter PIN (IC users leave blank)"
                   />
                 </div>
               )}
 
-              {error && (
-                <div className="px-4 py-3 bg-[#FDEBEC] text-[#9F2F2D] text-sm font-semibold rounded-xl border border-[#F2C9CC]">
-                  {error}
-                </div>
-              )}
+              {error && <div className="p-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl text-center border border-red-100">{error}</div>}
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 rounded-xl font-semibold text-[#FAF8F5] bg-[#12142A] hover:bg-[#011537] disabled:opacity-50 transition-colors flex justify-center items-center gap-2 ch-focus-ring"
-              >
-                {loading ? (
-                  <Loader className="w-5 h-5 animate-spin" />
-                ) : (
-                  usePin ? 'Sign in with PIN' : 'Send magic link'
-                )}
+              <button type="submit" disabled={loading} className="w-full py-4 rounded-xl font-black text-white bg-[#0F172A] hover:bg-gray-800 transition-all shadow-lg flex justify-center items-center gap-2">
+                {loading ? <Loader className="w-5 h-5 animate-spin" /> : (usePin ? 'Login with PIN' : 'Send Magic Link')}
               </button>
             </form>
           )}
 
-          {!success && showOktaButton && (
-            <div className="mt-6">
-              {/*
-                Divider + Okta button. Only rendered when the `okta_sso`
-                feature flag is on AND the adapter reports itself
-                configured — see showOktaButton computation above.
-              */}
-              <div className="flex items-center gap-3 my-4">
-                <span className="flex-1 h-px bg-gray-200" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">or</span>
-                <span className="flex-1 h-px bg-gray-200" />
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  setError('');
-                  try {
-                    await loginWithOkta();
-                  } catch (err) {
-                    setError(err.message || 'Okta login failed.');
-                  }
-                }}
-                className="w-full py-3 rounded-xl font-semibold border border-[#12142A] text-[#12142A] hover:bg-[#12142A] hover:text-[#FAF8F5] transition-colors flex items-center justify-center gap-2"
-              >
-                <Building2 className="w-5 h-5" /> Sign in with Okta
-              </button>
-            </div>
-          )}
-
           {!success && (
-            <button
-              onClick={() => setUsePin(!usePin)}
-              type="button"
-              className="mt-7 w-full text-center text-sm font-semibold text-[#58534C] hover:text-[#12142A] flex items-center justify-center gap-2 transition-colors"
-            >
-              <KeyRound className="w-4 h-4" strokeWidth={1.8} />
-              {usePin ? 'Switch to magic link' : 'Test user? Sign in with PIN'}
+            <button onClick={() => setUsePin(!usePin)} type="button" className="mt-8 w-full text-center text-sm font-bold text-gray-400 hover:text-gray-600 flex items-center justify-center gap-2">
+              <KeyRound className="w-4 h-4" /> {usePin ? 'Switch to Magic Link' : 'Test User? Login with PIN'}
             </button>
           )}
         </div>
-        <p className="text-center mt-6 text-[11px] text-[#58534C] uppercase tracking-micro font-semibold">
-          Care can be felt in everything we do
-        </p>
       </div>
     </div>
   );

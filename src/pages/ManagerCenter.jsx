@@ -34,20 +34,6 @@ function getDualTimes(isoString, tz) {
   };
 }
 
-const getWeekDates = (dateStr) => {
-  const [year, month, day] = dateStr.split('-');
-  const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  const dayOfWeek = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() - dayOfWeek + 1);
-  const dates = [];
-  for (let i = 0; i < 7; i++) {
-     const cd = new Date(d);
-     cd.setUTCDate(d.getUTCDate() + i);
-     dates.push(cd.toISOString().split('T')[0]);
-  }
-  return dates;
-};
-
 export function ManagerCenter() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('dispatch');
@@ -66,6 +52,10 @@ export function ManagerCenter() {
   const [statsPreset, setStatsPreset] = useState('this_week');
   const [statsStart, setStatsStart] = useState('');
   const [statsEnd, setStatsEnd] = useState('');
+
+  useEffect(() => { updateDateRange('this_week'); }, []);
+  useEffect(() => { if (activeTab === 'team') loadMySchedule(); }, [activeTab, scheduleDate]);
+  useEffect(() => { if (activeTab === 'stats') loadStatistics(); }, [activeTab, statsStart, statsEnd]);
 
   const updateDateRange = (preset) => {
     setStatsPreset(preset);
@@ -99,61 +89,26 @@ export function ManagerCenter() {
 
   const loadMySchedule = async () => {
     if (!user?.email) return;
-    const dates = getWeekDates(scheduleDate);
-    const { data } = await supabase.from('manager_schedules')
-      .select('schedule_date, schedule_data')
-      .eq('manager_email', user.email)
-      .gte('schedule_date', dates[0])
-      .lte('schedule_date', dates[6]);
-
-    const newSched = {};
-    dates.forEach(d => newSched[d] = {});
-    if (data) {
-      data.forEach(row => {
-        newSched[row.schedule_date] = row.schedule_data || {};
-      });
-    }
-    setTeamSchedule(newSched);
+    const { data } = await supabase.from('manager_schedules').select('schedule_data')
+      .eq('manager_email', user.email).eq('schedule_date', scheduleDate).maybeSingle();
+    setTeamSchedule(data?.schedule_data || {});
   };
 
-  const handleScheduleChange = (dateStr, timeVal, val) => {
-    setTeamSchedule(prev => ({
-      ...prev,
-      [dateStr]: {
-        ...prev[dateStr],
-        [timeVal]: val === '' ? '' : parseInt(val)
-      }
-    }));
+  const handleScheduleChange = (timeVal, val) => {
+    setTeamSchedule(prev => ({ ...prev, [timeVal]: val === '' ? '' : parseInt(val) }));
   };
 
   const saveMySchedule = async () => {
     setSavingSchedule(true);
-    const dates = getWeekDates(scheduleDate);
-    const upserts = dates.map(dStr => ({
+    await supabase.from('manager_schedules').upsert({
       manager_email: user.email,
-      schedule_date: dStr,
-      schedule_data: teamSchedule[dStr] || {},
+      schedule_date: scheduleDate,
+      schedule_data: teamSchedule,
       updated_at: new Date().toISOString()
-    }));
-
-    const { error } = await supabase.from('manager_schedules').upsert(upserts, { onConflict: 'manager_email, schedule_date' });
-    if (error) {
-      toast.error('Failed to save schedule');
-      console.error(error);
-    } else {
-      toast.success('Schedule saved');
-      await loadMySchedule();
-    }
+    }, { onConflict: 'manager_email, schedule_date' });
     setSavingSchedule(false);
+    toast.success('Schedule saved');
   };
-
-  useEffect(() => { updateDateRange('this_week'); }, []);
-  useEffect(() => {
-    if (activeTab === 'team') loadMySchedule();
-  }, [activeTab, scheduleDate, user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (activeTab === 'stats') loadStatistics();
-  }, [activeTab, statsStart, statsEnd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDispatchComplete = async () => {
     setSelectedIC(null);
@@ -162,232 +117,173 @@ export function ManagerCenter() {
   };
 
   const getTabClass = (id) =>
-    `px-5 py-4 font-semibold text-sm transition-colors border-b-2 focus:outline-none ${
+    `px-6 py-4 font-bold text-sm transition-all border-b-4 focus:outline-none ${
       activeTab === id
-        ? 'border-[#005682] text-[#12142A] bg-white'
-        : 'border-transparent text-[#58534C] hover:text-[#12142A] hover:bg-[#F1ECE7]'
+        ? 'border-[#5E4791] text-[#0F172A] bg-white'
+        : 'border-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-50'
     }`;
 
   return (
-    <div className="min-h-[100dvh] ch-paper flex flex-col pb-20">
+    <div className="min-h-screen bg-gray-50 flex flex-col pb-20 font-sans relative">
       <TopNav />
-      <div className="max-w-[1440px] mx-auto px-6 py-10 w-full flex-1 flex flex-col">
-        <div className="flex flex-col sm:flex-row justify-between sm:items-end gap-4 mb-8">
+      <div className="max-w-[1400px] mx-auto px-6 py-8 w-full flex-1 flex flex-col">
+        <div className="flex justify-between items-end mb-6">
           <div>
-            <p className="text-[11px] uppercase tracking-micro text-[#58534C] font-semibold mb-2">
-              Manager Center
-            </p>
-            <h1 className="font-display text-[44px] sm:text-[52px] text-[#12142A] tracking-tight leading-none">
-              Live dispatch &amp; team rhythm
-            </h1>
-            <p className="text-[#58534C] mt-3 font-medium max-w-xl">
-              Route patients to available ICs, coordinate your team schedule, and watch performance in real time.
-            </p>
+            <h1 className="text-3xl font-black text-[#0F172A]">Manager Center</h1>
+            <p className="text-gray-500 mt-1 font-medium">Live dispatching, team schedules, and performance tracking.</p>
           </div>
-          <div className="bg-white border border-[#EDE7DE] rounded-full p-1 flex font-semibold text-sm">
-            <button
-              onClick={() => setTimeZone('America/Denver')}
-              className={`px-5 py-2 rounded-full transition-colors ${timeZone === 'America/Denver' ? 'bg-[#12142A] text-[#FAF8F5]' : 'text-[#58534C] hover:bg-[#F1ECE7]'}`}
-            >
-              MT
-            </button>
-            <button
-              onClick={() => setTimeZone('America/Chicago')}
-              className={`px-5 py-2 rounded-full transition-colors ${timeZone === 'America/Chicago' ? 'bg-[#12142A] text-[#FAF8F5]' : 'text-[#58534C] hover:bg-[#F1ECE7]'}`}
-            >
-              CT
-            </button>
+          <div className="bg-white border border-gray-200 rounded-xl p-1 flex font-bold text-sm shadow-sm">
+            <button onClick={() => setTimeZone('America/Denver')} className={`px-5 py-2 rounded-lg transition-all ${timeZone === 'America/Denver' ? 'bg-[#0F172A] text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}>MT</button>
+            <button onClick={() => setTimeZone('America/Chicago')} className={`px-5 py-2 rounded-lg transition-all ${timeZone === 'America/Chicago' ? 'bg-[#0F172A] text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}>CT</button>
           </div>
         </div>
 
-        <div className="flex rounded-t-2xl border border-[#EDE7DE] border-b-0 overflow-hidden bg-white mb-0">
+        <div className="flex rounded-t-2xl border border-gray-200 overflow-hidden shadow-sm mb-6 bg-white">
           <button onClick={() => setActiveTab('dispatch')} className={getTabClass('dispatch')}>
-            <div className="flex items-center gap-2"><Clock className="w-4 h-4" strokeWidth={1.8} /> Live dispatch</div>
+            <div className="flex items-center gap-2"><Clock className="w-4 h-4" /> Live Dispatch</div>
           </button>
           <button onClick={() => setActiveTab('scheduled')} className={getTabClass('scheduled')}>
-            <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" strokeWidth={1.8} /> Scheduled matches</div>
+            <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Scheduled Matches</div>
           </button>
           <button onClick={() => setActiveTab('team')} className={getTabClass('team')}>
-            <div className="flex items-center gap-2"><Users className="w-4 h-4" strokeWidth={1.8} /> Team schedule</div>
+            <div className="flex items-center gap-2"><Users className="w-4 h-4" /> My Team Schedule</div>
           </button>
           <button onClick={() => setActiveTab('stats')} className={getTabClass('stats')}>
-            <div className="flex items-center gap-2"><BarChart3 className="w-4 h-4" strokeWidth={1.8} /> Statistics</div>
+            <div className="flex items-center gap-2"><BarChart3 className="w-4 h-4" /> Dispatch Statistics</div>
           </button>
         </div>
 
-        <div className="bg-white border border-[#EDE7DE] rounded-b-2xl p-6 sm:p-8 flex-1">
-          {activeTab === 'dispatch' && (
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-              <WaitingQueue queue={queue} selectedIC={selectedIC} onSelectIC={setSelectedIC} />
-              <OpenSlots
-                openSlots={openSlots}
-                selectedSlot={selectedSlot}
-                onSelectSlot={setSelectedSlot}
-                onEditSlot={setEditingSlot}
-                getDualTimes={getDualTimes}
-                timeZone={timeZone}
-              />
-              <DispatchActionPanel
-                selectedIC={selectedIC}
-                selectedSlot={selectedSlot}
-                onDispatchComplete={handleDispatchComplete}
-                getDualTimes={getDualTimes}
-                timeZone={timeZone}
-              />
-            </div>
-          )}
+        {activeTab === 'dispatch' && (
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1">
+            <WaitingQueue
+              queue={queue}
+              selectedIC={selectedIC}
+              onSelectIC={setSelectedIC}
+            />
+            <OpenSlots
+              openSlots={openSlots}
+              selectedSlot={selectedSlot}
+              onSelectSlot={setSelectedSlot}
+              onEditSlot={setEditingSlot}
+              getDualTimes={getDualTimes}
+              timeZone={timeZone}
+            />
+            <DispatchActionPanel
+              selectedIC={selectedIC}
+              selectedSlot={selectedSlot}
+              onDispatchComplete={handleDispatchComplete}
+              getDualTimes={getDualTimes}
+              timeZone={timeZone}
+            />
+          </div>
+        )}
 
-          {activeTab === 'scheduled' && (
-            <div>
-              <h2 className="font-display text-2xl text-[#12142A] mb-6 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-[#335649]" strokeWidth={1.8} /> Today&rsquo;s matches
-              </h2>
-              <ScheduledMatchesTable
-                scheduledSlots={scheduledSlots}
-                getDualTimes={getDualTimes}
-                timeZone={timeZone}
-                onDataChange={fetchData}
-              />
-            </div>
-          )}
+        {activeTab === 'scheduled' && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex-1">
+            <h2 className="text-xl font-bold text-[#0F172A] mb-6 flex items-center gap-2">
+              <CheckCircle2 className="w-6 h-6 text-green-500" /> Today's Matches
+            </h2>
+            <ScheduledMatchesTable
+              scheduledSlots={scheduledSlots}
+              getDualTimes={getDualTimes}
+              timeZone={timeZone}
+              onDataChange={fetchData}
+            />
+          </div>
+        )}
 
-          {activeTab === 'team' && (
-            <div className="max-w-[1200px] mx-auto w-full">
-              <div className="sticky top-0 z-20 bg-white pt-2 pb-5 border-b border-[#EDE7DE] mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-micro text-[#58534C] font-semibold">Team</p>
-                  <h2 className="font-display text-3xl text-[#12142A] flex items-center gap-2 leading-tight">
-                    <Users className="w-6 h-6 text-[#005682]" strokeWidth={1.8} /> My team schedule
-                  </h2>
-                </div>
-                <div className="flex items-end gap-3 bg-[#F1ECE7] p-3 rounded-xl border border-[#EDE7DE]">
-                  <div>
-                    <label className="block text-[10px] font-semibold text-[#58534C] uppercase tracking-micro mb-1">Target date</label>
-                    <input
-                      type="date"
-                      value={scheduleDate}
-                      onChange={(e) => setScheduleDate(e.target.value)}
-                      className="px-3 py-2 border border-[#D7D1C8] rounded-lg font-semibold text-[#12142A] focus:border-[#005682] outline-none bg-white"
-                    />
-                  </div>
-                  <button
-                    onClick={saveMySchedule}
-                    disabled={savingSchedule}
-                    className="bg-[#12142A] text-[#FAF8F5] font-semibold px-4 py-2.5 rounded-lg hover:bg-[#011537] disabled:opacity-50 transition-colors flex items-center gap-2 h-[42px] ch-focus-ring"
-                  >
-                    {savingSchedule ? <Loader className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" strokeWidth={1.8} /> Save</>}
-                  </button>
-                </div>
+        {activeTab === 'team' && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 max-w-3xl mx-auto w-full">
+            <div className="sticky top-0 z-20 bg-white pt-2 pb-4 border-b border-gray-200 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 shadow-sm">
+              <div>
+                <h2 className="text-2xl font-black text-[#0F172A] flex items-center gap-2">
+                  <Users className="w-6 h-6 text-[#5E4791]" /> My Team Schedule
+                </h2>
               </div>
-              <div className="space-y-1">
-                <div className="flex font-semibold text-[10px] text-[#58534C] uppercase tracking-micro px-4 pb-2 border-b border-[#EDE7DE] mb-2">
-                  <div className="w-24">Time (MT)</div>
-                  {getWeekDates(scheduleDate).map(d => {
-                    const label = new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'UTC' });
-                    return <div key={d} className="flex-1 text-center">{label}</div>;
-                  })}
+              <div className="flex items-end gap-3 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Target Date</label>
+                  <input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} className="px-3 py-2 border-2 border-gray-200 rounded-lg font-black text-[#0F172A] focus:border-[#5E4791] outline-none" />
                 </div>
-                {TIME_INTERVALS.map(int => (
-                  <div
-                    key={int.val}
-                    className="flex items-center p-2 hover:bg-[#F1ECE7] rounded-xl transition-colors border border-transparent hover:border-[#EDE7DE] group"
-                  >
-                    <div className="w-24 font-semibold text-[#495654] text-sm group-hover:text-[#005682] whitespace-nowrap overflow-hidden text-ellipsis">
-                      {int.label.replace(' MT', '')}
-                    </div>
-                    {getWeekDates(scheduleDate).map(d => (
-                      <div key={d} className="flex-1 px-1">
-                        <input
-                          type="number" min="0" placeholder="0"
-                          value={teamSchedule[d]?.[int.val] !== undefined ? teamSchedule[d][int.val] : ''}
-                          onChange={(e) => handleScheduleChange(d, int.val, e.target.value)}
-                          className="w-full px-2 py-2 border border-transparent bg-[#F1ECE7] hover:border-[#D7D1C8] rounded-lg text-center font-semibold text-sm text-[#005682] focus:bg-white focus:border-[#005682] focus:ring-0 outline-none transition-colors"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ))}
+                <button onClick={saveMySchedule} disabled={savingSchedule} className="bg-[#0F172A] text-white font-black px-4 py-2.5 rounded-lg shadow-md hover:bg-gray-800 disabled:opacity-50 transition-all flex items-center gap-2 h-[42px]">
+                  {savingSchedule ? <Loader className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" /> Save</>}
+                </button>
               </div>
             </div>
-          )}
+            <div className="space-y-1">
+              <div className="flex font-black text-[10px] text-gray-400 uppercase tracking-widest px-4 pb-2 border-b border-gray-200 mb-2">
+                <div className="flex-1">Time Interval (MT)</div>
+                <div className="w-32 text-center">Team BPS Count</div>
+              </div>
+              {TIME_INTERVALS.map(int => (
+                <div key={int.val} className="flex items-center p-2 hover:bg-gray-50 rounded-xl transition-colors border border-transparent hover:border-gray-100 group">
+                  <div className="flex-1 font-bold text-gray-700 text-lg group-hover:text-[#5E4791]">{int.label}</div>
+                  <input
+                    type="number" min="0" placeholder="0"
+                    value={teamSchedule[int.val] !== undefined ? teamSchedule[int.val] : ''}
+                    onChange={(e) => handleScheduleChange(int.val, e.target.value)}
+                    className="w-24 px-3 py-2 border-2 border-gray-200 rounded-xl text-center font-black text-xl text-[#5E4791] bg-white focus:border-[#5E4791] focus:ring-0 outline-none transition-colors"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
-          {activeTab === 'stats' && (
-            <div className="space-y-6">
-              <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-2 gap-4 border-b border-[#EDE7DE] pb-6">
+        {activeTab === 'stats' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
+              <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-4 border-b border-gray-100 pb-6">
                 <div>
-                  <p className="text-[11px] uppercase tracking-micro text-[#58534C] font-semibold mb-1">Performance</p>
-                  <h2 className="font-display text-3xl text-[#12142A] flex items-center gap-2 leading-tight">
-                    <BarChart3 className="w-6 h-6 text-[#005682]" strokeWidth={1.8} /> Dispatch statistics
+                  <h2 className="text-2xl font-black text-[#0F172A] mb-2 flex items-center gap-2">
+                    <BarChart3 className="w-6 h-6 text-[#007C8C]" /> Dispatch Statistics
                   </h2>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 bg-[#F1ECE7] p-3 rounded-xl border border-[#EDE7DE]">
-                  <select
-                    value={statsPreset}
-                    onChange={(e) => updateDateRange(e.target.value)}
-                    className="px-4 py-2 border border-[#D7D1C8] rounded-lg font-semibold text-[#12142A] focus:border-[#005682] outline-none bg-white"
-                  >
-                    <option value="last_7_days">Last 7 days</option>
-                    <option value="this_week">This week</option>
-                    <option value="last_week">Last week</option>
-                    <option value="this_month">This month</option>
-                    <option value="last_month">Last month</option>
-                    <option value="custom">Custom range...</option>
+                <div className="flex flex-wrap items-center gap-4 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <select value={statsPreset} onChange={(e) => updateDateRange(e.target.value)} className="px-4 py-2 border-2 border-gray-200 rounded-lg font-bold text-[#0F172A] focus:border-[#007C8C] outline-none">
+                    <option value="last_7_days">Last 7 Days</option>
+                    <option value="this_week">This Week</option>
+                    <option value="last_week">Last Week</option>
+                    <option value="this_month">This Month</option>
+                    <option value="last_month">Last Month</option>
+                    <option value="custom">Custom Range...</option>
                   </select>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="date"
-                      value={statsStart}
-                      onChange={(e) => { setStatsPreset('custom'); setStatsStart(e.target.value); }}
-                      className="px-3 py-2 border border-[#D7D1C8] rounded-lg font-semibold text-[#495654] outline-none focus:border-[#005682] bg-white"
-                    />
-                    <span className="text-[#A29A8E] font-semibold">to</span>
-                    <input
-                      type="date"
-                      value={statsEnd}
-                      onChange={(e) => { setStatsPreset('custom'); setStatsEnd(e.target.value); }}
-                      className="px-3 py-2 border border-[#D7D1C8] rounded-lg font-semibold text-[#495654] outline-none focus:border-[#005682] bg-white"
-                    />
+                    <input type="date" value={statsStart} onChange={(e) => { setStatsPreset('custom'); setStatsStart(e.target.value); }} className="px-3 py-2 border-2 border-gray-200 rounded-lg font-bold text-gray-600 outline-none focus:border-[#007C8C]" />
+                    <span className="text-gray-400 font-bold">to</span>
+                    <input type="date" value={statsEnd} onChange={(e) => { setStatsPreset('custom'); setStatsEnd(e.target.value); }} className="px-3 py-2 border-2 border-gray-200 rounded-lg font-bold text-gray-600 outline-none focus:border-[#007C8C]" />
                   </div>
                 </div>
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-                <div className="bg-[#12142A] rounded-2xl p-8 text-[#FAF8F5] relative overflow-hidden">
-                  <p className="text-[11px] font-semibold uppercase tracking-micro text-[#A8C8C2] mb-4">Total dispatches</p>
-                  <p className="font-display text-[72px] leading-none tracking-tight">{stats.total}</p>
+                <div className="bg-[#F3EFF9] border border-[#E7DFF3] rounded-2xl p-6 text-center shadow-sm">
+                  <p className="text-xs font-black text-[#5E4791] uppercase tracking-widest mb-2">Total Dispatches</p>
+                  <p className="text-5xl font-black text-[#0F172A]">{stats.total}</p>
                 </div>
-                <div className="bg-[#CFE4EB] border border-[#A8C8C2] rounded-2xl p-8">
-                  <p className="text-[11px] font-semibold uppercase tracking-micro text-[#005682] mb-4">Tier 1 dispatches</p>
-                  <p className="font-display text-[72px] leading-none tracking-tight text-[#12142A]">{stats.byTier[1] || 0}</p>
+                <div className="bg-[#E0F5F6] border border-[#C1ECEF] rounded-2xl p-6 text-center shadow-sm">
+                  <p className="text-xs font-black text-[#007C8C] uppercase tracking-widest mb-2">Tier 1 Dispatches</p>
+                  <p className="text-5xl font-black text-[#0F172A]">{stats.byTier[1] || 0}</p>
                 </div>
-                <div className="bg-[#E8F0EE] border border-[#A8C8C2] rounded-2xl p-8">
-                  <p className="text-[11px] font-semibold uppercase tracking-micro text-[#335649] mb-4">Tier 2 / 3 dispatches</p>
-                  <p className="font-display text-[72px] leading-none tracking-tight text-[#12142A]">
-                    {(stats.byTier[2] || 0) + (stats.byTier[3] || 0)}
-                  </p>
+                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 text-center shadow-sm">
+                  <p className="text-xs font-black text-gray-500 uppercase tracking-widest mb-2">Tier 2/3 Dispatches</p>
+                  <p className="text-5xl font-black text-[#0F172A]">{(stats.byTier[2] || 0) + (stats.byTier[3] || 0)}</p>
                 </div>
               </div>
-
-              <h3 className="font-display text-xl text-[#12142A] mb-4">Dispatches per IC</h3>
+              <h3 className="text-lg font-black text-[#0F172A] mb-4">Total Dispatches per IC</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Object.entries(stats.byIC).sort((a, b) => b[1] - a[1]).map(([email, count]) => (
-                  <div
-                    key={email}
-                    className="flex justify-between items-center p-4 border border-[#EDE7DE] rounded-xl bg-[#FAF8F5]"
-                  >
-                    <span className="font-semibold text-[#12142A] truncate pr-4">{email.split('@')[0]}</span>
-                    <span className="bg-[#12142A] text-[#FAF8F5] px-3 py-1 rounded-full font-semibold text-sm">{count}</span>
+                  <div key={email} className="flex justify-between items-center p-4 border-2 border-gray-100 rounded-xl bg-gray-50">
+                    <span className="font-bold text-gray-700 truncate pr-4">{email.split('@')[0]}</span>
+                    <span className="bg-[#0F172A] text-white px-3 py-1 rounded-lg font-black">{count}</span>
                   </div>
                 ))}
                 {Object.keys(stats.byIC).length === 0 && (
-                  <div className="col-span-full text-center py-10 text-[#A29A8E] font-medium border border-dashed border-[#D7D1C8] rounded-xl bg-[#FAF8F5]">
-                    No dispatch logs in this date range.
-                  </div>
+                  <div className="col-span-full text-center py-8 text-gray-400 font-medium border-2 border-dashed rounded-xl">No dispatch logs in this date range.</div>
                 )}
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {editingSlot && (

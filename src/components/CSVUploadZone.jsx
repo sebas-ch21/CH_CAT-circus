@@ -12,8 +12,6 @@ export function CSVUploadZone({ onUpload, title, description, expectedColumns })
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
-        transformHeader: (h) => h.trim().toLowerCase(),
-        transform: (v) => (typeof v === 'string' ? v.trim() : v),
         complete: (results) => {
           if (results.data.length === 0) {
             reject('CSV file is empty');
@@ -22,7 +20,7 @@ export function CSVUploadZone({ onUpload, title, description, expectedColumns })
 
           const firstRow = results.data[0];
           const missingColumns = expectedColumns.filter(
-            (col) => !(col.toLowerCase() in firstRow)
+            (col) => !(col in firstRow)
           );
 
           if (missingColumns.length > 0) {
@@ -85,8 +83,8 @@ export function CSVUploadZone({ onUpload, title, description, expectedColumns })
 
   return (
     <div className="w-full">
-      <h3 className="font-display text-xl text-[#12142A] mb-1 tracking-tight">{title}</h3>
-      <p className="text-sm text-[#58534C] font-medium mb-4">{description}</p>
+      <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
+      <p className="text-sm text-gray-600 mb-4">{description}</p>
 
       <div
         onDragOver={(e) => {
@@ -95,10 +93,10 @@ export function CSVUploadZone({ onUpload, title, description, expectedColumns })
         }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
-        className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
+        className={`relative border-2 border-dashed rounded-lg p-8 text-center transition ${
           isDragOver
-            ? 'border-[#005682] bg-[#CFE4EB]/40'
-            : 'border-[#D7D1C8] bg-[#FAF8F5] hover:border-[#A8C8C2]'
+            ? 'border-primary-500 bg-primary-50'
+            : 'border-gray-300 bg-gray-50 hover:border-gray-400'
         }`}
       >
         <input
@@ -110,32 +108,33 @@ export function CSVUploadZone({ onUpload, title, description, expectedColumns })
 
         <div className="flex flex-col items-center gap-3">
           <Upload
-            className={`w-8 h-8 ${isDragOver ? 'text-[#005682]' : 'text-[#A29A8E]'}`}
-            strokeWidth={1.8}
+            className={`w-8 h-8 ${
+              isDragOver ? 'text-primary-600' : 'text-gray-400'
+            }`}
           />
           <div>
-            <p className="font-semibold text-[#12142A]">
+            <p className="font-medium text-gray-900">
               Drag and drop your CSV here
             </p>
-            <p className="text-sm text-[#58534C] font-medium">or click to browse</p>
+            <p className="text-sm text-gray-600">or click to browse</p>
           </div>
         </div>
       </div>
 
       {status && (
         <div
-          className={`mt-3 flex gap-2 p-3 rounded-xl border ${
+          className={`mt-3 flex gap-2 p-3 rounded-lg ${
             status === 'success'
-              ? 'bg-[#E8F0EE] text-[#335649] border-[#A8C8C2]'
-              : 'bg-[#FDEBEC] text-[#9F2F2D] border-[#F2C9CC]'
+              ? 'bg-green-50 text-green-700 border border-green-200'
+              : 'bg-red-50 text-red-700 border border-red-200'
           }`}
         >
           {status === 'success' ? (
-            <CheckCircle className="w-5 h-5 flex-shrink-0" strokeWidth={1.8} />
+            <CheckCircle className="w-5 h-5 flex-shrink-0" />
           ) : (
-            <AlertCircle className="w-5 h-5 flex-shrink-0" strokeWidth={1.8} />
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
           )}
-          <p className="text-sm font-medium">{message}</p>
+          <p className="text-sm">{message}</p>
         </div>
       )}
     </div>

@@ -1,37 +1,28 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ManagerCenter } from '../pages/ManagerCenter';
 import { AuthContext } from '../context/AuthContext';
 import { BrowserRouter } from 'react-router-dom';
 
-vi.mock('../lib/supabase', () => {
-  const mockChannel = {
-    on: vi.fn(() => mockChannel),
-    subscribe: vi.fn(() => mockChannel),
-    unsubscribe: vi.fn(),
-  };
-  return {
-    supabase: {
-      from: vi.fn(() => ({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        gte: vi.fn().mockReturnThis(),
-        lte: vi.fn().mockReturnThis(),
-        lt: vi.fn().mockReturnThis(),
-        in: vi.fn().mockReturnThis(),
-        update: vi.fn().mockReturnThis(),
-        delete: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockResolvedValue({ data: [], error: null }),
-        upsert: vi.fn().mockResolvedValue({ data: [], error: null }),
-        order: vi.fn().mockResolvedValue({ data: [], error: null }),
-        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-      })),
-      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
-      channel: vi.fn(() => mockChannel),
-      removeChannel: vi.fn(),
-    }
-  };
-});
+vi.mock('../lib/supabase', () => ({
+  supabase: {
+    from: vi.fn(() => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      lte: vi.fn().mockReturnThis(),
+      lt: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      delete: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockResolvedValue({ data: [], error: null }),
+      upsert: vi.fn().mockResolvedValue({ data: [], error: null }),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    })),
+    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+  }
+}));
 
 const mockManagerUser = { id: 'm1', email: 'manager@clinic.com', role: 'MANAGER' };
 
@@ -69,7 +60,7 @@ describe('Manager Center Tests', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Save/i)).toBeInTheDocument();
-      expect(screen.getByText(/07:00 AM/i)).toBeInTheDocument();
+      expect(screen.getByText(/07:00 AM MT/i)).toBeInTheDocument();
     });
   });
 

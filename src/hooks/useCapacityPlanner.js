@@ -87,7 +87,7 @@ export function useCapacityPlanner(selectedDate) {
     let loadedCalc = 30;
 
     if (plan && plan.plan_data) {
-      if (Object.prototype.hasOwnProperty.call(plan.plan_data, 'calcPercentage')) {
+      if (plan.plan_data.hasOwnProperty('calcPercentage')) {
         loadedCalc = plan.plan_data.calcPercentage;
         loadedIntervals = plan.plan_data.intervals;
       } else {
@@ -193,9 +193,8 @@ export function useCapacityPlanner(selectedDate) {
         if (assign.email && assign.count > 0) {
           for (let i = 0; i < assign.count; i++) {
             const exactSlotTime = new Date(`${selectedDate}T${interval.of_val}:00`);
-            const slug = crypto.randomUUID().slice(0, 6).toUpperCase();
             slotsToInsert.push({
-              patient_identifier: `OF-${interval.of_val}-${assign.email.split('@')[0].toUpperCase()}-${slug}`,
+              patient_identifier: `OF-${interval.of_val}-${assign.email.split('@')[0].toUpperCase()}-${Math.floor(Math.random() * 1000)}`,
               start_time: exactSlotTime.toISOString(),
               host_manager: assign.email,
               status: 'OPEN'

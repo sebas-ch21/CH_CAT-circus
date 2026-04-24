@@ -1,24 +1,2 @@
 node_modules/
 .env
-.env.local
-.env.*.local
-
-# Build output
-dist/
-
-# Claude Code local settings (per-user, not shared)
-.claude/
-
-# Editor/OS
-.DS_Store
-.vscode/
-.idea/
-*.swp
-*.swo
-Thumbs.db
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-*.log
