@@ -27,25 +27,27 @@ export class ErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
-          <div className="bg-white rounded-2xl border border-red-200 shadow-xl p-8 max-w-md w-full text-center">
-            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h1 className="text-2xl font-black text-[#0F172A] mb-2">Something Went Wrong</h1>
-            <p className="text-gray-600 font-medium mb-6">
-              An unexpected error occurred. Please refresh the page to continue.
+        <div className="ch-paper min-h-[100dvh] flex items-center justify-center p-6">
+          <div className="bg-white rounded-2xl border border-[#EDE7DE] p-8 max-w-md w-full text-center ch-rise" style={{ boxShadow: '0 2px 8px rgba(18, 20, 42, 0.04)' }}>
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#FDEBEC] text-[#9F2F2D] mx-auto mb-5">
+              <AlertCircle className="w-7 h-7" strokeWidth={1.8} />
+            </div>
+            <h1 className="font-display text-3xl text-[#12142A] mb-2 tracking-tight">Something went wrong</h1>
+            <p className="text-[#58534C] font-medium mb-6 leading-relaxed">
+              An unexpected error occurred. Refresh the page to continue.
             </p>
             <button
               onClick={() => window.location.reload()}
-              className="w-full bg-[#0F172A] text-white font-bold py-3 rounded-xl hover:bg-gray-800 transition-colors"
+              className="w-full bg-[#12142A] text-[#FAF8F5] font-semibold py-3.5 rounded-xl hover:bg-[#011537] transition-colors ch-focus-ring"
             >
-              Reload Application
+              Reload application
             </button>
             {this.state.error && (
               <details className="mt-6 text-left">
-                <summary className="text-xs font-bold text-gray-400 uppercase tracking-widest cursor-pointer hover:text-gray-600">
-                  Error Details
+                <summary className="text-[10px] font-semibold text-[#A29A8E] uppercase tracking-micro cursor-pointer hover:text-[#58534C]">
+                  Error details
                 </summary>
-                <pre className="mt-3 p-3 bg-gray-50 rounded-lg text-xs text-red-600 overflow-auto border border-gray-200">
+                <pre className="mt-3 p-3 bg-[#FAF8F5] rounded-lg text-xs text-[#9F2F2D] overflow-auto border border-[#EDE7DE] font-mono">
                   {this.state.error.toString()}
                 </pre>
               </details>
