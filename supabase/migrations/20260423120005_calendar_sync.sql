@@ -103,14 +103,14 @@ RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $cleanup$
 BEGIN
   DELETE FROM public.calendar_open_slots
   WHERE start_time < (NOW() - INTERVAL '30 days');
 EXCEPTION WHEN OTHERS THEN
   RAISE WARNING 'cleanup_calendar_open_slots failed: %', SQLERRM;
 END;
-$$;
+$cleanup$;
 
 -- ============================================================
 -- 6. PG_CRON SCHEDULE (commented; enable at go-live time)
