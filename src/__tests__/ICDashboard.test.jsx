@@ -34,10 +34,18 @@ vi.mock('../lib/supabase', () => {
     return chain;
   });
 
+  const mockChannel = {
+    on: vi.fn(() => mockChannel),
+    subscribe: vi.fn(() => mockChannel),
+    unsubscribe: vi.fn(),
+  };
+
   return {
     supabase: {
       from: mockFrom,
       rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+      channel: vi.fn(() => mockChannel),
+      removeChannel: vi.fn(),
     }
   };
 });

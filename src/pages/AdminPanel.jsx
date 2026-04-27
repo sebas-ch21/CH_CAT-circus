@@ -2,22 +2,23 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { TopNav } from '../components/TopNav';
 import { CSVUploadZone } from '../components/CSVUploadZone';
-import { 
-  Users, 
-  Calendar as CalendarIcon, 
-  ShieldCheck, 
-  Search, 
-  Trash2, 
-  CircleAlert as AlertCircle, 
-  CircleCheck as CheckCircle, 
-  Loader, 
-  Eye, 
-  EyeOff, 
-  Plus, 
-  X, 
-  ArrowRight, 
-  TableProperties, 
-  UserPlus 
+import {
+  Users,
+  Calendar as CalendarIcon,
+  ShieldCheck,
+  Search,
+  Trash2,
+  CircleAlert as AlertCircle,
+  CircleCheck as CheckCircle,
+  Loader,
+  Eye,
+  EyeOff,
+  Lock,
+  Plus,
+  X,
+  ArrowRight,
+  TableProperties,
+  UserPlus
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -46,14 +47,13 @@ const TIME_INTERVALS = [
 ];
 
 export function AdminPanel() {
-  const [activeTab, setActiveTab] = useState('circus'); 
+  const [activeTab, setActiveTab] = useState('circus');
   const [profiles, setProfiles] = useState([]);
   const [managers, setManagers] = useState([]);
   const [slots, setSlots] = useState([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
-  // Capacity Circus & Consolidated States
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [planData, setPlanData] = useState({});
   const [managerSchedules, setManagerSchedules] = useState([]);
@@ -62,49 +62,60 @@ export function AdminPanel() {
   const [publishing, setPublishing] = useState(false);
   const [publishMessage, setPublishMessage] = useState(null);
 
-  const [loadingStaff, setLoadingStaff] = useState(false);
-  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [, setLoadingStaff] = useState(false);
   const [staffMessage, setStaffMessage] = useState(null);
-  const [slotsMessage, setSlotsMessage] = useState(null);
 
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [pendingDuplicates, setPendingDuplicates] = useState([]);
-  const [resolvedUploadData, setResolvedUploadData] = useState([]);
 
-  // Add Headcount Manually State
   const [isAddHeadcountModalOpen, setIsAddHeadcountModalOpen] = useState(false);
   const [newHeadcountEmail, setNewHeadcountEmail] = useState('');
   const [newHeadcountRole, setNewHeadcountRole] = useState('IC');
   const [newHeadcountTier, setNewHeadcountTier] = useState(3);
+  // Hierarchy selectors in the new-user modal. Only one of these is used,
+  // depending on the role: manager_email for ICs, admin_email for Managers.
+  const [newHeadcountManagerEmail, setNewHeadcountManagerEmail] = useState('');
+  const [newHeadcountAdminEmail, setNewHeadcountAdminEmail] = useState('');
   const [isAddingHeadcount, setIsAddingHeadcount] = useState(false);
   const [addHeadcountError, setAddHeadcountError] = useState(null);
 
-  // Passcodes
-  const [currentAdminPin, setCurrentAdminPin] = useState('charlieadmin');
   const [newAdminPin, setNewAdminPin] = useState('');
-  const [showAdminPin, setShowAdminPin] = useState(false);
   const [showNewAdminPin, setShowNewAdminPin] = useState(false);
-  const [currentManagerPin, setCurrentManagerPin] = useState('charliemanager');
   const [newManagerPin, setNewManagerPin] = useState('');
-  const [showManagerPin, setShowManagerPin] = useState(false);
   const [showNewManagerPin, setShowNewManagerPin] = useState(false);
-
-  useEffect(() => {
-    fetchProfiles();
-    fetchPins();
-    fetchSlots();
-  }, []);
-
-  useEffect(() => {
-    loadDailyData(selectedDate);
-  }, [selectedDate]);
 
   const fetchProfiles = async () => {
     const { data } = await supabase.from('profiles').select('*').order('email');
     if (data) {
       setProfiles(data);
+      // "managers" is consumed by the Consolidated Planner and by the
+      // hierarchy selectors in the roster table. Both Admins and Managers
+      // appear here because the Planner can host slots as either role.
       setManagers(data.filter(p => p.role === 'MANAGER' || p.role === 'ADMIN'));
     }
+  };
+
+  // Convenience selectors for the hierarchy dropdowns in the roster tab.
+  // Kept as derived values (instead of extra state) so they automatically
+  // refresh whenever `profiles` changes.
+  const managerOptions = profiles.filter(p => p.role === 'MANAGER');
+  const adminOptions   = profiles.filter(p => p.role === 'ADMIN');
+
+  // Maps a role change in the inline roster to a safe hierarchy payload.
+  // Without this, toggling a MANAGER → IC would leave `admin_id` populated
+  // which the DB trigger rejects. We pre-empt that by nulling invalid
+  // pointers up front.
+  const buildRoleChangeUpdate = (profile, nextRole) => {
+    const update = { role: nextRole };
+    if (nextRole === 'ADMIN') {
+      update.manager_id = null;
+      update.admin_id = null;
+    } else if (nextRole === 'MANAGER') {
+      update.manager_id = null;
+    } else if (nextRole === 'IC') {
+      update.admin_id = null;
+    }
+    return update;
   };
 
   const fetchSlots = async () => {
@@ -112,24 +123,11 @@ export function AdminPanel() {
     if (data) setSlots(data);
   };
 
-  const fetchPins = async () => {
-    const { data } = await supabase.from('app_settings').select('*');
-    if (data) {
-      const a = data.find(d => d.setting_key === 'admin_pin');
-      const m = data.find(d => d.setting_key === 'manager_pin');
-      if (a) setCurrentAdminPin(a.setting_value);
-      if (m) setCurrentManagerPin(m.setting_value);
-    }
-  };
-
-  // --- CONSOLIDATED CAPACITY LOGIC ---
   const loadDailyData = async (dateStr) => {
-    // 1. Fetch Manager Schedules for this date
     const { data: schedules } = await supabase.from('manager_schedules').select('*').eq('schedule_date', dateStr);
     const schedArray = schedules || [];
     setManagerSchedules(schedArray);
 
-    // 2. Sum up the totals
     const totals = {};
     TIME_INTERVALS.forEach(int => {
       let sum = 0;
@@ -140,17 +138,16 @@ export function AdminPanel() {
     });
     setConsolidatedTotals(totals);
 
-    // 3. Fetch existing Admin Plan
     const { data: plan } = await supabase.from('daily_capacity_plans').select('plan_data').eq('plan_date', dateStr).maybeSingle();
     let loadedIntervals = {};
     let loadedCalc = 30;
 
     if (plan && plan.plan_data) {
-      if (plan.plan_data.hasOwnProperty('calcPercentage')) {
+      if (Object.prototype.hasOwnProperty.call(plan.plan_data, 'calcPercentage')) {
         loadedCalc = plan.plan_data.calcPercentage;
         loadedIntervals = plan.plan_data.intervals;
       } else {
-        loadedIntervals = plan.plan_data; 
+        loadedIntervals = plan.plan_data;
       }
     } else {
       TIME_INTERVALS.forEach(int => {
@@ -161,10 +158,15 @@ export function AdminPanel() {
     setPlanData(loadedIntervals);
   };
 
-  const getSuggestedCount = (timeVal, pct) => {
-    const num = consolidatedTotals[timeVal] || 0;
-    return num <= 12 ? 0 : Math.ceil(num * (pct / 100));
-  };
+  useEffect(() => {
+    fetchProfiles();
+    fetchSlots();
+  }, []);
+
+  useEffect(() => {
+    loadDailyData(selectedDate);
+  }, [selectedDate]);
+
 
   const updateInterval = (timeVal, field, value) => {
     setPlanData(prev => ({
@@ -175,17 +177,46 @@ export function AdminPanel() {
 
   const addManager = (timeVal) => {
     setPlanData(prev => {
+      const row = prev[timeVal] || { override: '', assignments: [] };
+      const totalBps = consolidatedTotals[timeVal] || 0;
+      const calcSuggested = totalBps <= 12 ? 0 : Math.ceil(totalBps * (calcPercentage / 100));
+      const targetOverflow = row.override !== '' ? parseInt(row.override) : calcSuggested;
+
+      const currentFilled = row.assignments.reduce((sum, a) => sum + (parseInt(a.count)||0), 0);
+
+      if (currentFilled + 1 > targetOverflow) {
+        toast.error('Cannot allocate slots beyond total overflow slots needed.');
+        return prev;
+      }
+
       const updated = { ...prev };
-      updated[timeVal] = updated[timeVal] || { override: '', assignments: [] };
-      updated[timeVal].assignments.push({ email: '', count: 1 });
+      updated[timeVal] = { ...row, assignments: [...row.assignments, { email: '', count: 1 }] };
       return updated;
     });
   };
 
   const updateManager = (timeVal, idx, field, value) => {
     setPlanData(prev => {
+      const row = prev[timeVal] || { override: '', assignments: [] };
+      const totalBps = consolidatedTotals[timeVal] || 0;
+      const calcSuggested = totalBps <= 12 ? 0 : Math.ceil(totalBps * (calcPercentage / 100));
+      const targetOverflow = row.override !== '' ? parseInt(row.override) : calcSuggested;
+
+      const currentFilled = row.assignments.reduce((sum, a) => sum + (parseInt(a.count)||0), 0);
+      const oldCount = parseInt(row.assignments[idx].count) || 0;
+
+      if (field === 'count') {
+        const newCount = parseInt(value);
+        if (currentFilled - oldCount + newCount > targetOverflow) {
+          toast.error('Cannot allocate slots beyond total overflow slots needed.');
+          return prev;
+        }
+      }
+
       const updated = { ...prev };
-      updated[timeVal].assignments[idx][field] = field === 'count' ? parseInt(value) : value;
+      const newAssignments = [...row.assignments];
+      newAssignments[idx] = { ...newAssignments[idx], [field]: field === 'count' ? parseInt(value) : value };
+      updated[timeVal] = { ...row, assignments: newAssignments };
       return updated;
     });
   };
@@ -216,8 +247,9 @@ export function AdminPanel() {
         if (assign.email && assign.count > 0) {
           for (let i = 0; i < assign.count; i++) {
             const exactSlotTime = new Date(`${selectedDate}T${interval.of_val}:00`);
+            const slug = crypto.randomUUID().slice(0, 6).toUpperCase();
             slotsToInsert.push({
-              patient_identifier: `OF-${interval.of_val}-${assign.email.split('@')[0].toUpperCase()}-${Math.floor(Math.random() * 1000)}`,
+              patient_identifier: `OF-${interval.of_val}-${assign.email.split('@')[0].toUpperCase()}-${slug}`,
               start_time: exactSlotTime.toISOString(),
               host_manager: assign.email,
               status: 'OPEN'
@@ -228,7 +260,7 @@ export function AdminPanel() {
     });
 
     if (slotsToInsert.length === 0) {
-      setPublishMessage({ type: 'error', text: 'No slots to publish! Select managers and set slot counts first.' });
+      setPublishMessage({ type: 'error', text: 'No slots to publish. Select managers and set slot counts first.' });
       setPublishing(false);
       return;
     }
@@ -237,14 +269,24 @@ export function AdminPanel() {
     if (insertError) {
       setPublishMessage({ type: 'error', text: `Failed to insert slots: ${insertError.message}` });
     } else {
-      await fetchSlots(); 
-      setPublishMessage({ type: 'success', text: `Success! Added ${slotsToInsert.length} slots to live dispatch.` });
+      await fetchSlots();
+      setPublishMessage({ type: 'success', text: `Added ${slotsToInsert.length} slots to live dispatch.` });
+
+      const emptyPlan = {};
+      TIME_INTERVALS.forEach(int => {
+        emptyPlan[int.val] = { override: '0', assignments: [] };
+      });
+      setPlanData(emptyPlan);
+
+      await supabase.from('daily_capacity_plans').upsert({
+        plan_date: selectedDate,
+        plan_data: { calcPercentage, intervals: emptyPlan }
+      }, { onConflict: 'plan_date' });
     }
     setPublishing(false);
     setTimeout(() => setPublishMessage(null), 5000);
   };
 
-  // --- ROSTER LOGIC ---
   const filteredProfiles = profiles.filter(p =>
     p.email?.toLowerCase().includes(userSearchTerm.toLowerCase())
   );
@@ -267,15 +309,34 @@ export function AdminPanel() {
     setStaffMessage(null);
     const duplicates = [];
     const newRows = [];
+    // `assignments` is accumulated for *all* rows (new + duplicate) that
+    // provide a `manager_email` or `admin_email` column. We submit the
+    // batch to `fn_bulk_assign_hierarchy` once roster rows exist so the
+    // SQL trigger can validate role compatibility server-side.
+    const assignments = [];
+
     for (const row of csvData) {
       if (!row.email) continue;
-      const existing = profiles.find(p => p.email?.toLowerCase() === row.email.toLowerCase());
+      const emailLc = row.email.toLowerCase();
+      const existing = profiles.find(p => p.email?.toLowerCase() === emailLc);
       if (existing) {
         duplicates.push({ old: existing, new: row });
       } else {
-        newRows.push({ email: row.email.toLowerCase(), role: row.role || 'IC', tier_rank: parseInt(row.tier_rank) || 3 });
+        newRows.push({
+          email: emailLc,
+          role: row.role || 'IC',
+          tier_rank: parseInt(row.tier_rank) || 3
+        });
+      }
+      if (row.manager_email || row.admin_email) {
+        assignments.push({
+          profile_email: emailLc,
+          manager_email: (row.manager_email || '').toLowerCase(),
+          admin_email:   (row.admin_email || '').toLowerCase()
+        });
       }
     }
+
     if (newRows.length > 0) {
       const { error } = await supabase.from('profiles').insert(newRows);
       if (error) {
@@ -284,6 +345,25 @@ export function AdminPanel() {
         setStaffMessage({ type: 'success', text: `Added ${newRows.length} new staff members.` });
       }
     }
+
+    // Apply hierarchy assignments after profiles exist. Any failures
+    // (unknown manager, wrong role, etc.) come back in the response
+    // and are surfaced to the admin as a toast so they can correct the CSV.
+    if (assignments.length > 0) {
+      const { data: bulkResult, error: bulkErr } = await supabase
+        .rpc('fn_bulk_assign_hierarchy', { assignments });
+      if (bulkErr) {
+        toast.error(`Hierarchy assignment failed: ${bulkErr.message}`);
+      } else if (bulkResult?.failures?.length) {
+        toast.error(
+          `Hierarchy: ${bulkResult.success_count} applied, ${bulkResult.failures.length} failed (see console).`
+        );
+        console.warn('Hierarchy bulk failures', bulkResult.failures);
+      } else {
+        toast.success(`Hierarchy applied for ${bulkResult?.success_count ?? assignments.length} rows.`);
+      }
+    }
+
     if (duplicates.length > 0) {
       setPendingDuplicates(duplicates);
       setShowDuplicateModal(true);
@@ -295,7 +375,7 @@ export function AdminPanel() {
   const handleAddHeadcountSubmit = async (e) => {
     e.preventDefault();
     setAddHeadcountError(null);
-    
+
     if (!newHeadcountEmail || newHeadcountEmail.trim() === '') {
       setAddHeadcountError('Email is required');
       return;
@@ -305,7 +385,6 @@ export function AdminPanel() {
 
     const emailFormatted = newHeadcountEmail.trim().toLowerCase();
 
-    // Check for existing user locally first
     const existing = profiles.find(p => p.email?.toLowerCase() === emailFormatted);
     if (existing) {
       setAddHeadcountError('A user with this email already exists in the roster.');
@@ -313,10 +392,22 @@ export function AdminPanel() {
       return;
     }
 
+    // Resolve optional hierarchy selectors to ids so the trigger can
+    // validate roles server-side. An unknown email simply means "do not
+    // set" here; the admin can fix it from the inline roster afterwards.
+    const managerProfile = newHeadcountRole === 'IC' && newHeadcountManagerEmail
+      ? profiles.find(p => p.email === newHeadcountManagerEmail && p.role === 'MANAGER')
+      : null;
+    const adminProfile = newHeadcountRole === 'MANAGER' && newHeadcountAdminEmail
+      ? profiles.find(p => p.email === newHeadcountAdminEmail && p.role === 'ADMIN')
+      : null;
+
     const { error } = await supabase.from('profiles').insert([{
       email: emailFormatted,
       role: newHeadcountRole,
-      tier_rank: parseInt(newHeadcountTier)
+      tier_rank: parseInt(newHeadcountTier),
+      manager_id: managerProfile?.id ?? null,
+      admin_id: adminProfile?.id ?? null
     }]);
 
     if (error) {
@@ -327,149 +418,214 @@ export function AdminPanel() {
       setNewHeadcountEmail('');
       setNewHeadcountRole('IC');
       setNewHeadcountTier(3);
+      setNewHeadcountManagerEmail('');
+      setNewHeadcountAdminEmail('');
       setIsAddHeadcountModalOpen(false);
       await fetchProfiles();
       setIsAddingHeadcount(false);
     }
   };
-  
+
   const handleDeleteSlot = async (id) => {
-    await supabase.from('bps_slots').delete().eq('id', id);
-    fetchSlots();
+    const { error } = await supabase.from('bps_slots').delete().eq('id', id);
+    if (error) {
+      toast.error(`Failed to delete slot: ${error.message}`);
+      return;
+    }
+    await fetchSlots();
   };
-  
+
   const handleUpdateProfile = async (id, updates) => {
-    await supabase.from('profiles').update(updates).eq('id', id);
-    fetchProfiles();
+    const { error } = await supabase.from('profiles').update(updates).eq('id', id);
+    if (error) {
+      // The DB trigger can reject role / hierarchy combinations; surface
+      // the message directly so the admin can correct it.
+      toast.error(`Failed to update profile: ${error.message}`);
+      return;
+    }
+    await fetchProfiles();
   };
-  
+
+  // Role changes from the inline roster row need to clear out any
+  // hierarchy pointers that the new role does not allow, otherwise the
+  // trigger would reject the UPDATE. This wrapper centralises the logic.
+  const handleRoleChange = async (profile, nextRole) => {
+    await handleUpdateProfile(profile.id, buildRoleChangeUpdate(profile, nextRole));
+  };
+
   const handleDeleteProfile = async (id) => {
-    await supabase.from('profiles').delete().eq('id', id);
+    const { error } = await supabase.from('profiles').delete().eq('id', id);
+    if (error) {
+      toast.error(`Failed to delete profile: ${error.message}`);
+      return;
+    }
     setDeleteConfirmId(null);
-    fetchProfiles();
+    await fetchProfiles();
   };
-  
+
   const handleUpdatePin = async (role) => {
     const key = role === 'ADMIN' ? 'admin_pin' : 'manager_pin';
     const val = role === 'ADMIN' ? newAdminPin : newManagerPin;
-    if(val.length < 4) return;
-    await supabase.from('app_settings').upsert({ setting_key: key, setting_value: val }, { onConflict: 'setting_key' });
-    if(role === 'ADMIN') { setCurrentAdminPin(val); setNewAdminPin(''); }
-    else { setCurrentManagerPin(val); setNewManagerPin(''); }
+    if (val.length < 4) {
+      toast.error('PIN must be at least 4 characters');
+      return;
+    }
+    const { error } = await supabase.rpc('fn_admin_update_pin', { p_key: key, p_value: val });
+    if (error) {
+      toast.error(`Failed to update PIN: ${error.message}`);
+      return;
+    }
+    if (role === 'ADMIN') setNewAdminPin('');
+    else setNewManagerPin('');
+    toast.success('PIN updated');
   };
 
-  const getTabClass = (id) => `flex-1 py-4 text-center font-bold text-sm transition-all border-b-4 focus:outline-none ${activeTab === id ? 'border-[#0F172A] text-[#0F172A] bg-gray-50' : 'border-transparent text-gray-400 hover:bg-gray-50 hover:text-gray-600'}`;
+  const getTabClass = (id) =>
+    `flex-1 py-4 text-center font-semibold text-sm transition-colors border-b-2 focus:outline-none ${
+      activeTab === id
+        ? 'border-[#005682] text-[#12142A] bg-white'
+        : 'border-transparent text-[#58534C] hover:bg-[#F1ECE7] hover:text-[#12142A]'
+    }`;
+
+  const getSuggestedCount = (timeVal, pct) => {
+    const num = consolidatedTotals[timeVal] || 0;
+    return num <= 12 ? 0 : Math.ceil(num * (pct / 100));
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-[100dvh] ch-paper pb-20">
       <TopNav />
-      <div className="mx-auto px-4 sm:px-6 py-8" style={{ maxWidth: '98%' }}>
-        
-        <div className="flex bg-white rounded-t-2xl border border-gray-200 overflow-hidden shadow-sm">
+      <div className="mx-auto px-4 sm:px-6 py-10" style={{ maxWidth: '98%' }}>
+        <div className="mb-8 flex flex-col sm:flex-row justify-between sm:items-end gap-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-micro text-[#58534C] font-semibold mb-2">
+              Admin
+            </p>
+            <h1 className="font-display text-[44px] sm:text-[52px] text-[#12142A] tracking-tight leading-none">
+              Capacity planning &amp; roster
+            </h1>
+            <p className="text-[#58534C] mt-3 font-medium max-w-xl">
+              Consolidate schedules, publish overflow slots, and keep the roster clean.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex bg-white rounded-t-2xl border border-[#EDE7DE] border-b-0 overflow-hidden">
           <button onClick={() => setActiveTab('circus')} className={getTabClass('circus')}>
-            <div className="flex items-center justify-center gap-2"><TableProperties className="w-4 h-4" /> Consolidated Planner</div>
+            <div className="flex items-center justify-center gap-2"><TableProperties className="w-4 h-4" strokeWidth={1.8} /> Consolidated planner</div>
           </button>
           <button onClick={() => setActiveTab('roster')} className={getTabClass('roster')}>
-            <div className="flex items-center justify-center gap-2"><Users className="w-4 h-4" /> Roster Management</div>
+            <div className="flex items-center justify-center gap-2"><Users className="w-4 h-4" strokeWidth={1.8} /> Roster</div>
           </button>
           <button onClick={() => setActiveTab('appointments')} className={getTabClass('appointments')}>
-            <div className="flex items-center justify-center gap-2"><CalendarIcon className="w-4 h-4" /> Active Slots</div>
+            <div className="flex items-center justify-center gap-2"><CalendarIcon className="w-4 h-4" strokeWidth={1.8} /> Active slots</div>
           </button>
           <button onClick={() => setActiveTab('security')} className={getTabClass('security')}>
-            <div className="flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Passcode Mgt</div>
+            <div className="flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" strokeWidth={1.8} /> Passcodes</div>
           </button>
         </div>
 
-        <div className="bg-white border border-t-0 border-gray-200 rounded-b-2xl p-6 shadow-sm min-h-[500px]">
-          
-          {/* TAB 1: CONSOLIDATED CIRCUS PLANNER */}
+        <div className="bg-white border border-[#EDE7DE] rounded-b-2xl p-6 sm:p-8 min-h-[500px]">
+          {/* TAB 1 — CONSOLIDATED PLANNER */}
           {activeTab === 'circus' && (
             <div className="space-y-6">
-              <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end border-b pb-6 gap-4">
+              <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end border-b border-[#EDE7DE] pb-6 gap-4">
                 <div>
-                  <h2 className="text-2xl font-black text-[#0F172A]">Consolidated Circus Planner</h2>
-                  <p className="text-gray-500 font-medium text-sm mt-1">Attendees sum automatically from individual Manager Team Schedules. Publishing *adds* slots.</p>
+                  <h2 className="font-display text-3xl text-[#12142A] tracking-tight">Consolidated planner</h2>
+                  <p className="text-[#58534C] font-medium text-sm mt-2 max-w-xl">
+                    Attendees sum from individual Manager team schedules. Publishing adds slots to live dispatch.
+                  </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-4">
+                <div className="flex flex-wrap items-end gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Calc %</label>
+                    <label className="block text-[10px] font-semibold text-[#58534C] uppercase tracking-micro mb-1">Calc %</label>
                     <div className="relative">
-                      <input 
-                        type="number" min="0" max="100" value={calcPercentage} onChange={(e) => setCalcPercentage(parseFloat(e.target.value)||0)}
-                        className="w-20 px-3 py-2 border-2 border-gray-200 rounded-xl text-[#0F172A] font-black focus:border-[#5E4791] outline-none"
+                      <input
+                        type="number" min="0" max="100" value={calcPercentage}
+                        onChange={(e) => setCalcPercentage(parseFloat(e.target.value)||0)}
+                        className="w-20 px-3 py-2 border border-[#D7D1C8] rounded-lg text-[#12142A] font-semibold focus:border-[#005682] outline-none bg-white"
                       />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">%</span>
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#A29A8E] font-semibold">%</span>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Target Date</label>
-                    <input 
+                    <label className="block text-[10px] font-semibold text-[#58534C] uppercase tracking-micro mb-1">Target date</label>
+                    <input
                       type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
-                      className="px-4 py-2 border-2 border-gray-200 rounded-xl text-[#0F172A] font-black focus:border-[#5E4791] outline-none h-[44px]"
+                      className="px-4 py-2 border border-[#D7D1C8] rounded-lg text-[#12142A] font-semibold focus:border-[#005682] outline-none h-[42px] bg-white"
                     />
                   </div>
-                  <button onClick={handlePublishPlan} disabled={publishing} style={{backgroundColor: '#0F172A', color: 'white'}} className="px-6 h-[44px] mt-[18px] rounded-xl font-black shadow-lg hover:opacity-90 disabled:opacity-50 transition-all flex items-center gap-2">
-                    {publishing ? <Loader className="w-5 h-5 animate-spin" /> : 'Publish Overflows'}
+                  <button
+                    onClick={handlePublishPlan}
+                    disabled={publishing}
+                    className="px-6 h-[42px] rounded-lg font-semibold bg-[#12142A] text-[#FAF8F5] hover:bg-[#011537] disabled:opacity-50 transition-colors flex items-center gap-2 ch-focus-ring"
+                  >
+                    {publishing ? <Loader className="w-5 h-5 animate-spin" /> : 'Publish overflows'}
                   </button>
                 </div>
               </div>
 
               {publishMessage && (
-                <div className={`p-4 rounded-xl flex items-center gap-2 font-bold ${publishMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                  {publishMessage.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />} {publishMessage.text}
+                <div className={`p-4 rounded-xl flex items-center gap-2 font-semibold ${
+                  publishMessage.type === 'success'
+                    ? 'bg-[#E8F0EE] text-[#335649] border border-[#A8C8C2]'
+                    : 'bg-[#FDEBEC] text-[#9F2F2D] border border-[#F2C9CC]'
+                }`}>
+                  {publishMessage.type === 'success' ? <CheckCircle className="w-5 h-5" strokeWidth={1.8} /> : <AlertCircle className="w-5 h-5" strokeWidth={1.8} />}
+                  {publishMessage.text}
                 </div>
               )}
 
-              <div className="overflow-x-auto border border-gray-200 rounded-2xl pb-4">
+              <div className="overflow-x-auto border border-[#EDE7DE] rounded-2xl pb-2">
                 <table className="w-full text-left border-collapse min-w-[1200px]">
                   <thead>
-                    <tr className="bg-gray-50 border-b-2 border-gray-200">
-                      <th className="p-3 text-[10px] font-bold text-[#0F172A] uppercase tracking-wider sticky left-0 bg-gray-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">BPS Time (MT)</th>
-                      <th className="p-3 text-[10px] font-bold text-[#5E4791] uppercase tracking-wider border-r border-gray-200">OF Time (MT)</th>
-                      
-                      {/* Dynamic Manager Columns */}
+                    <tr className="bg-[#FAF8F5] border-b border-[#EDE7DE]">
+                      <th className="p-3 text-[10px] font-semibold text-[#12142A] uppercase tracking-micro sticky left-0 bg-[#FAF8F5] z-10 shadow-[2px_0_5px_-2px_rgba(18,20,42,0.08)]">BPS Time (MT)</th>
+                      <th className="p-3 text-[10px] font-semibold text-[#005682] uppercase tracking-micro border-r border-[#EDE7DE]">OF Time (MT)</th>
+
                       {managers.map(m => (
-                        <th key={m.id} className="p-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center border-r border-gray-200 max-w-[80px] truncate" title={m.email}>
+                        <th key={m.id} className="p-3 text-[10px] font-semibold text-[#58534C] uppercase tracking-micro text-center border-r border-[#EDE7DE] max-w-[80px] truncate" title={m.email}>
                           {m.email.split('@')[0]}
                         </th>
                       ))}
-                      
-                      <th className="p-3 text-[10px] font-black text-[#0F172A] bg-gray-100 uppercase tracking-wider text-center border-r-2 border-gray-300">TOTAL BPS</th>
-                      <th className="p-3 text-[10px] font-black text-[#5E4791] uppercase tracking-wider text-center w-24">Overflows Needed</th>
-                      <th className="p-3 text-[10px] font-bold text-[#0F172A] uppercase tracking-wider">Assign Managers (Max 2 slots)</th>
+
+                      <th className="p-3 text-[10px] font-semibold text-[#12142A] bg-[#F1ECE7] uppercase tracking-micro text-center border-r border-[#D7D1C8]">Total BPS</th>
+                      <th className="p-3 text-[10px] font-semibold text-[#005682] uppercase tracking-micro text-center w-24">Overflows needed</th>
+                      <th className="p-3 text-[10px] font-semibold text-[#12142A] uppercase tracking-micro">Assign managers (max 2 slots)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {TIME_INTERVALS.map((interval) => {
                       const row = planData[interval.val] || { override: '', assignments: [] };
                       const totalBps = consolidatedTotals[interval.val] || 0;
-                      const calcSuggested = totalBps <= 12 ? 0 : Math.ceil(totalBps * (calcPercentage / 100));
+                      const calcSuggested = getSuggestedCount(interval.val, calcPercentage);
                       const targetOverflow = row.override !== '' ? parseInt(row.override) : calcSuggested;
                       const filledSlots = row.assignments.reduce((sum, a) => sum + (parseInt(a.count)||0), 0);
                       const isShort = targetOverflow > 0 && filledSlots < targetOverflow;
 
                       return (
-                        <tr key={interval.val} className="border-b border-gray-100 hover:bg-purple-50/30 transition-colors">
-                          <td className="p-3 font-bold text-[#0F172A] sticky left-0 bg-white group-hover:bg-purple-50/10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] z-10 whitespace-nowrap">{interval.bps_mt}</td>
-                          <td className="p-3 font-black text-[#5E4791] border-r border-gray-100 whitespace-nowrap">{interval.of_mt}</td>
-                          
-                          {/* Manager Data Cells */}
+                        <tr key={interval.val} className="border-b border-[#EDE7DE] hover:bg-[#FAF8F5] transition-colors">
+                          <td className="p-3 font-semibold text-[#12142A] sticky left-0 bg-white shadow-[2px_0_5px_-2px_rgba(18,20,42,0.05)] z-10 whitespace-nowrap">{interval.bps_mt}</td>
+                          <td className="p-3 font-semibold text-[#005682] border-r border-[#EDE7DE] whitespace-nowrap">{interval.of_mt}</td>
+
                           {managers.map(m => {
                             const schedData = managerSchedules.find(s => s.manager_email === m.email)?.schedule_data || {};
                             const val = schedData[interval.val] || 0;
                             return (
-                              <td key={m.id} className="p-3 text-center border-r border-gray-100 text-gray-500 font-semibold">{val > 0 ? val : '-'}</td>
+                              <td key={m.id} className="p-3 text-center border-r border-[#EDE7DE] text-[#495654] font-medium">{val > 0 ? val : '-'}</td>
                             );
                           })}
 
-                          <td className="p-3 text-center font-black text-xl text-[#0F172A] bg-gray-50 border-r-2 border-gray-200">{totalBps}</td>
-                          
-                          <td className="p-3 text-center bg-[#F3EFF9]/50 border-r border-purple-100">
+                          <td className="p-3 text-center font-semibold text-xl text-[#12142A] bg-[#F1ECE7] border-r border-[#D7D1C8]">{totalBps}</td>
+
+                          <td className="p-3 text-center bg-[#CFE4EB]/35 border-r border-[#A8C8C2]/50">
                             <div className="flex flex-col items-center">
-                              <span className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Calc: {calcSuggested}</span>
-                              <input 
-                                type="number" min="0" placeholder="Set" value={row.override !== '' ? row.override : calcSuggested} onChange={(e) => updateInterval(interval.val, 'override', e.target.value)}
-                                className="w-16 px-2 py-1.5 border-2 border-[#E7DFF3] bg-white text-[#5E4791] rounded-lg text-center font-black outline-none focus:border-[#5E4791]"
+                              <span className="text-[#58534C] text-[10px] font-semibold uppercase tracking-micro mb-1">Calc: {calcSuggested}</span>
+                              <input
+                                type="number" min="0" placeholder="Set"
+                                value={row.override !== '' ? row.override : calcSuggested}
+                                onChange={(e) => updateInterval(interval.val, 'override', e.target.value)}
+                                className="w-16 px-2 py-1.5 border border-[#A8C8C2] bg-white text-[#005682] rounded-lg text-center font-semibold outline-none focus:border-[#005682]"
                               />
                             </div>
                           </td>
@@ -478,24 +634,42 @@ export function AdminPanel() {
                             <div className="space-y-2">
                               {row.assignments.map((assign, idx) => (
                                 <div key={idx} className="flex items-center gap-2">
-                                  <select value={assign.email} onChange={(e) => updateManager(interval.val, idx, 'email', e.target.value)} className="px-3 py-1.5 border-2 border-gray-200 rounded-lg text-sm font-bold w-48 focus:border-[#5E4791] outline-none">
-                                    <option value="">Select Host...</option>
+                                  <select
+                                    value={assign.email}
+                                    onChange={(e) => updateManager(interval.val, idx, 'email', e.target.value)}
+                                    className="px-3 py-1.5 border border-[#D7D1C8] rounded-lg text-sm font-semibold w-48 focus:border-[#005682] outline-none bg-white text-[#12142A]"
+                                  >
+                                    <option value="">Select host...</option>
                                     {managers.map(m => <option key={m.email} value={m.email}>{m.email.split('@')[0]}</option>)}
                                   </select>
-                                  <select value={assign.count} onChange={(e) => updateManager(interval.val, idx, 'count', e.target.value)} className="px-2 py-1.5 border-2 border-gray-200 rounded-lg text-sm font-black w-16 outline-none focus:border-[#5E4791]">
+                                  <select
+                                    value={assign.count}
+                                    onChange={(e) => updateManager(interval.val, idx, 'count', e.target.value)}
+                                    className="px-2 py-1.5 border border-[#D7D1C8] rounded-lg text-sm font-semibold w-16 outline-none focus:border-[#005682] bg-white text-[#12142A]"
+                                  >
                                     <option value={1}>1</option>
                                     <option value={2}>2</option>
                                   </select>
-                                  <button onClick={() => removeManager(interval.val, idx)} className="text-red-400 hover:text-red-600 p-1 bg-red-50 rounded-md"><Trash2 className="w-4 h-4" /></button>
+                                  <button
+                                    onClick={() => removeManager(interval.val, idx)}
+                                    className="text-[#9F2F2D] hover:text-[#7F2524] p-1.5 bg-[#FDEBEC] rounded-lg"
+                                  >
+                                    <Trash2 className="w-4 h-4" strokeWidth={1.8} />
+                                  </button>
                                 </div>
                               ))}
                               <div className="flex items-center justify-between pt-1">
-                                <button onClick={() => addManager(interval.val)} className="text-[10px] font-black uppercase tracking-widest text-[#5E4791] flex items-center gap-1 hover:bg-purple-100 px-2 py-1.5 rounded-md transition-colors">
-                                  <Plus className="w-3 h-3" /> Add Host
+                                <button
+                                  onClick={() => addManager(interval.val)}
+                                  className="text-[10px] font-semibold uppercase tracking-micro text-[#005682] flex items-center gap-1 hover:bg-[#CFE4EB] px-2 py-1.5 rounded-md transition-colors"
+                                >
+                                  <Plus className="w-3 h-3" strokeWidth={2} /> Add host
                                 </button>
                                 {targetOverflow > 0 && (
-                                  <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md ${isShort ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                    {filledSlots} / {targetOverflow} Filled
+                                  <span className={`text-[10px] font-semibold uppercase tracking-micro px-2.5 py-1 rounded-full ${
+                                    isShort ? 'bg-[#FDEBEC] text-[#9F2F2D]' : 'bg-[#E8F0EE] text-[#335649]'
+                                  }`}>
+                                    {filledSlots} / {targetOverflow} filled
                                   </span>
                                 )}
                               </div>
@@ -510,85 +684,175 @@ export function AdminPanel() {
             </div>
           )}
 
+          {/* TAB 2 — ROSTER */}
           {activeTab === 'roster' && (
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-              <div className="xl:col-span-4 bg-gray-50 rounded-xl border border-gray-200 p-5 shadow-sm space-y-6">
+              <div className="xl:col-span-4 bg-[#FAF8F5] rounded-2xl border border-[#EDE7DE] p-6 space-y-6">
                 <div>
-                  <h3 className="text-lg font-bold text-[#0F172A] mb-2">Import Roster CSV</h3>
-                  <CSVUploadZone onUpload={handleStaffUpload} title="Drop CSV Data" description="Requires columns: email, role, tier_rank" expectedColumns={['email', 'role', 'tier_rank']} />
+                  <h3 className="font-display text-2xl text-[#12142A] mb-3 tracking-tight">Import roster</h3>
+                  <CSVUploadZone
+                    onUpload={handleStaffUpload}
+                    title="Drop CSV data"
+                    description="Required: email, role, tier_rank. Optional: manager_email, admin_email."
+                    expectedColumns={['email', 'role', 'tier_rank', 'manager_email', 'admin_email']}
+                  />
                   {staffMessage && (
-                    <div className={`mt-4 p-3 rounded-xl text-sm font-bold flex items-center gap-2 ${staffMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                    <div className={`mt-4 p-3 rounded-xl text-sm font-semibold flex items-center gap-2 ${
+                      staffMessage.type === 'success'
+                        ? 'bg-[#E8F0EE] text-[#335649] border border-[#A8C8C2]'
+                        : 'bg-[#FDEBEC] text-[#9F2F2D] border border-[#F2C9CC]'
+                    }`}>
                       {staffMessage.text}
                     </div>
                   )}
                 </div>
-                <div className="border-t border-gray-200 pt-6">
-                  <h3 className="text-lg font-bold text-[#0F172A] mb-2">Manual Headcount</h3>
-                  <button 
+                <div className="border-t border-[#EDE7DE] pt-6">
+                  <h3 className="font-display text-2xl text-[#12142A] mb-3 tracking-tight">Manual headcount</h3>
+                  <button
                     onClick={() => setIsAddHeadcountModalOpen(true)}
-                    className="w-full py-3 bg-white border-2 border-dashed border-[#5E4791] text-[#5E4791] rounded-xl font-bold hover:bg-purple-50 transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-3 bg-white border border-dashed border-[#005682] text-[#005682] rounded-xl font-semibold hover:bg-[#CFE4EB]/50 transition-colors flex items-center justify-center gap-2"
                   >
-                    <UserPlus className="w-4 h-4" /> Add Headcount Manually
+                    <UserPlus className="w-4 h-4" strokeWidth={1.8} /> Add headcount manually
                   </button>
                 </div>
               </div>
               <div className="xl:col-span-8 flex flex-col">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-[#0F172A]">Active Team Roster</h3>
+                  <h3 className="font-display text-2xl text-[#12142A] tracking-tight">Active team roster</h3>
                   <div className="relative w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <input type="text" placeholder="Search..." value={userSearchTerm} onChange={(e) => setUserSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#A29A8E] w-4 h-4" strokeWidth={1.8} />
+                    <input
+                      type="text" placeholder="Search..." value={userSearchTerm}
+                      onChange={(e) => setUserSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#D7D1C8] rounded-xl text-sm outline-none focus:border-[#005682] text-[#12142A]"
+                    />
                   </div>
                 </div>
                 <div className="flex-1 overflow-y-auto space-y-2 max-h-[600px]">
-                  {filteredProfiles.map((p) => (
-                    <div key={p.id} className="flex items-center gap-4 p-3 bg-white rounded-xl border border-gray-200">
-                      <div className="flex-1 font-bold text-[#0F172A] truncate">{p.email}</div>
-                      <select value={p.role} onChange={(e) => handleUpdateProfile(p.id, { role: e.target.value })} className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm font-semibold w-32">
-                        <option value="ADMIN">Admin</option>
-                        <option value="MANAGER">Manager</option>
-                        <option value="IC">IC (Staff)</option>
-                      </select>
-                      <select value={p.tier_rank || 3} onChange={(e) => handleUpdateProfile(p.id, { tier_rank: parseInt(e.target.value) })} className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm font-semibold w-28">
-                        <option value="1">Tier 1</option>
-                        <option value="2">Tier 2</option>
-                        <option value="3">Tier 3</option>
-                      </select>
-                      <div className="w-20 flex justify-end">
-                        {deleteConfirmId === p.id ? (
-                          <div className="flex gap-1 items-center bg-red-50 p-1 rounded-lg">
-                            <button onClick={() => handleDeleteProfile(p.id)} className="bg-red-600 text-white px-2 py-1 rounded text-[10px] font-bold">Yes</button>
-                            <button onClick={() => setDeleteConfirmId(null)} className="text-gray-500 hover:text-gray-800 p-1"><X className="w-4 h-4" /></button>
-                          </div>
-                        ) : (
-                          <button onClick={() => setDeleteConfirmId(p.id)} className="p-2 text-gray-400 hover:text-red-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                  {filteredProfiles.map((p) => {
+                    // Hierarchy picker only surfaces the role-legal option:
+                    //  - IC       → choose a Manager
+                    //  - MANAGER  → choose an Admin (optional)
+                    //  - ADMIN    → no hierarchy picker (top of the tree)
+                    const showManagerPicker = p.role === 'IC';
+                    const showAdminPicker   = p.role === 'MANAGER';
+                    return (
+                      <div key={p.id} className="flex items-center gap-4 p-3 bg-white rounded-xl border border-[#EDE7DE]">
+                        <div className="flex-1 font-semibold text-[#12142A] truncate">{p.email}</div>
+                        <select
+                          value={p.role}
+                          onChange={(e) => handleRoleChange(p, e.target.value)}
+                          className="bg-[#FAF8F5] border border-[#D7D1C8] rounded-lg px-2 py-1.5 text-sm font-medium w-32 text-[#12142A]"
+                        >
+                          <option value="ADMIN">Admin</option>
+                          <option value="MANAGER">Manager</option>
+                          <option value="IC">IC (Staff)</option>
+                        </select>
+                        <select
+                          value={p.tier_rank || 3}
+                          onChange={(e) => handleUpdateProfile(p.id, { tier_rank: parseInt(e.target.value) })}
+                          className="bg-[#FAF8F5] border border-[#D7D1C8] rounded-lg px-2 py-1.5 text-sm font-medium w-28 text-[#12142A]"
+                        >
+                          <option value="1">Tier 1</option>
+                          <option value="2">Tier 2</option>
+                          <option value="3">Tier 3</option>
+                        </select>
+                        {showManagerPicker && (
+                          <select
+                            value={p.manager_id || ''}
+                            onChange={(e) =>
+                              handleUpdateProfile(p.id, { manager_id: e.target.value || null })
+                            }
+                            title="Assigned Manager"
+                            className="bg-[#FAF8F5] border border-[#D7D1C8] rounded-lg px-2 py-1.5 text-sm font-medium w-44 text-[#12142A]"
+                          >
+                            <option value="">— Manager —</option>
+                            {managerOptions.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.email.split('@')[0]}
+                              </option>
+                            ))}
+                          </select>
                         )}
+                        {showAdminPicker && (
+                          <select
+                            value={p.admin_id || ''}
+                            onChange={(e) =>
+                              handleUpdateProfile(p.id, { admin_id: e.target.value || null })
+                            }
+                            title="Assigned Admin (optional)"
+                            className="bg-[#FAF8F5] border border-[#D7D1C8] rounded-lg px-2 py-1.5 text-sm font-medium w-44 text-[#12142A]"
+                          >
+                            <option value="">— Admin (opt.) —</option>
+                            {adminOptions.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.email.split('@')[0]}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <div className="w-20 flex justify-end">
+                          {deleteConfirmId === p.id ? (
+                            <div className="flex gap-1 items-center bg-[#FDEBEC] p-1 rounded-lg">
+                              <button
+                                onClick={() => handleDeleteProfile(p.id)}
+                                className="bg-[#9F2F2D] text-[#FAF8F5] px-2 py-1 rounded text-[10px] font-semibold"
+                              >
+                                Yes
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirmId(null)}
+                                className="text-[#58534C] hover:text-[#12142A] p-1"
+                              >
+                                <X className="w-4 h-4" strokeWidth={1.8} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteConfirmId(p.id)}
+                              className="p-2 text-[#A29A8E] hover:text-[#9F2F2D] rounded-lg"
+                            >
+                              <Trash2 className="w-4 h-4" strokeWidth={1.8} />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
           )}
 
+          {/* TAB 3 — ACTIVE SLOTS */}
           {activeTab === 'appointments' && (
             <div>
               <div className="mb-6 flex justify-between items-center">
                 <div>
-                  <h3 className="text-2xl font-black text-[#0F172A]">All Active Slots</h3>
-                  <p className="text-sm text-gray-500 font-medium">Manage or delete slots manually. ({slots.length} total)</p>
+                  <h3 className="font-display text-3xl text-[#12142A] tracking-tight">All active slots</h3>
+                  <p className="text-sm text-[#58534C] font-medium">Manage or delete slots manually. ({slots.length} total)</p>
                 </div>
               </div>
               <div className="space-y-2 max-h-[600px] overflow-y-auto">
                 {slots.map((slot) => (
-                  <div key={slot.id} className="flex justify-between items-center p-4 bg-white rounded-xl border border-gray-200">
+                  <div key={slot.id} className="flex justify-between items-center p-4 bg-white rounded-xl border border-[#EDE7DE]">
                     <div>
-                      <p className="font-black text-[#0F172A] text-lg">{slot.patient_identifier}</p>
-                      <p className="text-sm font-semibold text-gray-500">{new Date(slot.start_time).toLocaleString()} {slot.host_manager && <span className="text-[#5E4791] ml-2">Host: {slot.host_manager}</span>}</p>
+                      <p className="font-semibold text-[#12142A] text-base tracking-tight">{slot.patient_identifier}</p>
+                      <p className="text-sm font-medium text-[#58534C]">
+                        {new Date(slot.start_time).toLocaleString()}
+                        {slot.host_manager && <span className="text-[#005682] ml-2">Host: {slot.host_manager}</span>}
+                      </p>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-md bg-gray-100 text-gray-600">{slot.status}</span>
-                      <button onClick={() => handleDeleteSlot(slot.id)} className="p-2 bg-red-50 text-red-500 rounded-lg"><Trash2 className="w-5 h-5" /></button>
+                      <span className="text-[10px] font-semibold uppercase tracking-micro px-3 py-1 rounded-full bg-[#F1ECE7] text-[#495654]">
+                        {slot.status}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteSlot(slot.id)}
+                        className="p-2 bg-[#FDEBEC] text-[#9F2F2D] rounded-lg hover:bg-[#F9D4D6] transition-colors"
+                      >
+                        <Trash2 className="w-5 h-5" strokeWidth={1.8} />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -596,99 +860,132 @@ export function AdminPanel() {
             </div>
           )}
 
+          {/* TAB 4 — PASSCODES */}
           {activeTab === 'security' && (
-            <div className="max-w-4xl mx-auto py-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-gray-50 rounded-2xl border border-gray-200 p-8 shadow-sm">
+            <div className="max-w-4xl mx-auto py-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-[#FAF8F5] rounded-2xl border border-[#EDE7DE] p-8">
                   <div className="flex items-center gap-3 mb-6">
-                    <ShieldCheck className="w-6 h-6 text-[#0F172A]" />
-                    <h3 className="text-lg font-bold text-[#0F172A]">Admin PIN</h3>
+                    <ShieldCheck className="w-6 h-6 text-[#12142A]" strokeWidth={1.8} />
+                    <h3 className="font-display text-2xl text-[#12142A] tracking-tight">Admin PIN</h3>
                   </div>
                   <div className="space-y-4">
-                    <div className="relative">
-                      <input type={showAdminPin ? 'text' : 'password'} value={currentAdminPin} readOnly className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none font-mono text-gray-500 font-bold pr-12" />
-                      <button type="button" onClick={() => setShowAdminPin(!showAdminPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                        {showAdminPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
+                    <div className="flex items-center gap-3 px-4 py-3 bg-white border border-[#EDE7DE] rounded-xl text-[#58534C] font-medium text-sm">
+                      <Lock className="w-4 h-4 text-[#A29A8E]" strokeWidth={1.8} />
+                      Current PIN is hashed server-side and cannot be displayed.
                     </div>
                     <div className="flex gap-2">
                       <div className="flex-1 relative">
-                        <input type={showNewAdminPin ? 'text' : 'password'} value={newAdminPin} onChange={(e) => setNewAdminPin(e.target.value)} placeholder="New PIN (min 4 chars)" className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl outline-none focus:border-[#0F172A] font-bold pr-12" />
-                        <button type="button" onClick={() => setShowNewAdminPin(!showNewAdminPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                          {showNewAdminPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        <input
+                          type={showNewAdminPin ? 'text' : 'password'}
+                          value={newAdminPin}
+                          onChange={(e) => setNewAdminPin(e.target.value)}
+                          placeholder="New PIN (min 4 chars)"
+                          className="w-full px-4 py-3 bg-white border border-[#D7D1C8] rounded-xl outline-none focus:border-[#12142A] font-medium pr-12 text-[#12142A]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewAdminPin(!showNewAdminPin)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#A29A8E] hover:text-[#12142A]"
+                        >
+                          {showNewAdminPin ? <EyeOff className="w-4 h-4" strokeWidth={1.8} /> : <Eye className="w-4 h-4" strokeWidth={1.8} />}
                         </button>
                       </div>
-                      <button onClick={() => handleUpdatePin('ADMIN')} className="px-6 rounded-xl font-bold text-white bg-[#0F172A]">Save</button>
+                      <button
+                        onClick={() => handleUpdatePin('ADMIN')}
+                        className="px-6 rounded-xl font-semibold text-[#FAF8F5] bg-[#12142A] hover:bg-[#011537] transition-colors ch-focus-ring"
+                      >
+                        Save
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-[#F0F7F8] rounded-2xl border border-[#D1ECEF] p-8 shadow-sm">
+                <div className="bg-[#E8F0EE] rounded-2xl border border-[#A8C8C2] p-8">
                   <div className="flex items-center gap-3 mb-6">
-                    <Users className="w-6 h-6 text-[#007C8C]" />
-                    <h3 className="text-lg font-bold text-[#0F172A]">Manager PIN</h3>
+                    <Users className="w-6 h-6 text-[#335649]" strokeWidth={1.8} />
+                    <h3 className="font-display text-2xl text-[#12142A] tracking-tight">Manager PIN</h3>
                   </div>
                   <div className="space-y-4">
-                    <div className="relative">
-                      <input type={showManagerPin ? 'text' : 'password'} value={currentManagerPin} readOnly className="w-full px-4 py-3 bg-white border border-[#D1ECEF] rounded-xl outline-none font-mono text-gray-500 font-bold pr-12" />
-                      <button type="button" onClick={() => setShowManagerPin(!showManagerPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                        {showManagerPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
+                    <div className="flex items-center gap-3 px-4 py-3 bg-white border border-[#A8C8C2] rounded-xl text-[#58534C] font-medium text-sm">
+                      <Lock className="w-4 h-4 text-[#A29A8E]" strokeWidth={1.8} />
+                      Current PIN is hashed server-side and cannot be displayed.
                     </div>
                     <div className="flex gap-2">
                       <div className="flex-1 relative">
-                        <input type={showNewManagerPin ? 'text' : 'password'} value={newManagerPin} onChange={(e) => setNewManagerPin(e.target.value)} placeholder="New PIN (min 4 chars)" className="w-full px-4 py-3 border-2 border-[#D1ECEF] rounded-xl outline-none focus:border-[#007C8C] font-bold pr-12" />
-                        <button type="button" onClick={() => setShowNewManagerPin(!showNewManagerPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                          {showNewManagerPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        <input
+                          type={showNewManagerPin ? 'text' : 'password'}
+                          value={newManagerPin}
+                          onChange={(e) => setNewManagerPin(e.target.value)}
+                          placeholder="New PIN (min 4 chars)"
+                          className="w-full px-4 py-3 bg-white border border-[#A8C8C2] rounded-xl outline-none focus:border-[#335649] font-medium pr-12 text-[#12142A]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewManagerPin(!showNewManagerPin)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#A29A8E] hover:text-[#12142A]"
+                        >
+                          {showNewManagerPin ? <EyeOff className="w-4 h-4" strokeWidth={1.8} /> : <Eye className="w-4 h-4" strokeWidth={1.8} />}
                         </button>
                       </div>
-                      <button onClick={() => handleUpdatePin('MANAGER')} className="px-6 rounded-xl font-bold text-white bg-[#007C8C]">Save</button>
+                      <button
+                        onClick={() => handleUpdatePin('MANAGER')}
+                        className="px-6 rounded-xl font-semibold text-[#FAF8F5] bg-[#335649] hover:bg-[#0A3327] transition-colors ch-focus-ring"
+                      >
+                        Save
+                      </button>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           )}
-
         </div>
       </div>
 
+      {/* DUPLICATE RESOLUTION MODAL */}
       {showDuplicateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/80 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden">
-            <div className="bg-[#0F172A] p-8 text-white flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#12142A]/70 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-4xl overflow-hidden border border-[#EDE7DE] ch-rise">
+            <div className="bg-[#12142A] p-8 text-[#FAF8F5] flex justify-between items-center">
               <div>
-                <h2 className="text-2xl font-black tracking-tight flex items-center gap-3">
-                  <AlertCircle className="w-6 h-6 text-yellow-400" /> Resolve Data Conflicts
+                <h2 className="font-display text-3xl tracking-tight flex items-center gap-3">
+                  <AlertCircle className="w-6 h-6 text-[#FBF3DB]" strokeWidth={1.8} /> Resolve data conflicts
                 </h2>
-                <p className="text-sm font-medium opacity-80 mt-2">{pendingDuplicates.length} duplicates detected.</p>
+                <p className="text-sm font-medium text-[#A8C8C2] mt-2">{pendingDuplicates.length} duplicates detected.</p>
               </div>
             </div>
-            <div className="p-8 max-h-[60vh] overflow-y-auto bg-gray-50">
+            <div className="p-8 max-h-[60vh] overflow-y-auto bg-[#FAF8F5]">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200">
+                  <tr className="text-left text-[10px] font-semibold text-[#58534C] uppercase tracking-micro border-b border-[#EDE7DE]">
                     <th className="pb-4 px-4">Email</th>
-                    <th className="pb-4 px-4">Current Data</th>
-                    <th className="pb-4 text-center"><ArrowRight className="inline w-4 h-4 text-gray-300" /></th>
-                    <th className="pb-4 px-4">Incoming Data</th>
+                    <th className="pb-4 px-4">Current data</th>
+                    <th className="pb-4 text-center"><ArrowRight className="inline w-4 h-4 text-[#A29A8E]" strokeWidth={1.8} /></th>
+                    <th className="pb-4 px-4">Incoming data</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-[#EDE7DE]">
                   {pendingDuplicates.map((dup, idx) => (
                     <tr key={idx} className="hover:bg-white transition-colors">
-                      <td className="py-6 px-4 font-bold text-[#0F172A] text-base">{dup.old.email}</td>
+                      <td className="py-6 px-4 font-semibold text-[#12142A] text-base">{dup.old.email}</td>
                       <td className="py-6 px-4">
-                        <button onClick={() => resolveDuplicateRow(idx, 'old')} className="w-full text-left p-4 rounded-2xl border-2 border-gray-200 hover:border-gray-400 hover:bg-gray-100 transition-all">
-                          <div className="text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-2">KEEP EXISTING</div>
-                          <div className="font-black text-gray-800 text-lg">{dup.old.role} - Tier {dup.old.tier_rank}</div>
+                        <button
+                          onClick={() => resolveDuplicateRow(idx, 'old')}
+                          className="w-full text-left p-4 rounded-xl border border-[#D7D1C8] hover:border-[#495654] hover:bg-[#F1ECE7] transition-colors"
+                        >
+                          <div className="text-[10px] uppercase tracking-micro text-[#58534C] font-semibold mb-2">Keep existing</div>
+                          <div className="font-semibold text-[#12142A] text-base">{dup.old.role} &middot; Tier {dup.old.tier_rank}</div>
                         </button>
                       </td>
-                      <td className="text-center text-gray-300 font-black text-xs">VS</td>
+                      <td className="text-center text-[#A29A8E] font-semibold text-xs">VS</td>
                       <td className="py-6 px-4">
-                        <button onClick={() => resolveDuplicateRow(idx, 'new')} className="w-full text-left p-4 rounded-2xl border-2 border-[#D1ECEF] bg-[#F0F7F8] hover:border-[#007C8C] hover:shadow-md transition-all">
-                          <div className="text-[10px] uppercase tracking-widest text-[#007C8C] font-bold mb-2">OVERWRITE WITH NEW</div>
-                          <div className="font-black text-[#0F172A] text-lg">{dup.new.role} - Tier {dup.new.tier_rank}</div>
+                        <button
+                          onClick={() => resolveDuplicateRow(idx, 'new')}
+                          className="w-full text-left p-4 rounded-xl border border-[#A8C8C2] bg-[#E8F0EE] hover:border-[#335649] transition-colors"
+                        >
+                          <div className="text-[10px] uppercase tracking-micro text-[#335649] font-semibold mb-2">Overwrite with new</div>
+                          <div className="font-semibold text-[#12142A] text-base">{dup.new.role} &middot; Tier {dup.new.tier_rank}</div>
                         </button>
                       </td>
                     </tr>
@@ -700,38 +997,49 @@ export function AdminPanel() {
         </div>
       )}
 
-      {/* Manual Headcount Modal */}
+      {/* ADD HEADCOUNT MODAL */}
       {isAddHeadcountModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/80 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200 p-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#12142A]/70 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden p-8 border border-[#EDE7DE] ch-rise">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-black text-[#0F172A] flex items-center gap-2">
-                <UserPlus className="w-6 h-6 text-[#5E4791]" /> Add Staff Member
+              <h2 className="font-display text-2xl text-[#12142A] flex items-center gap-2 tracking-tight">
+                <UserPlus className="w-5 h-5 text-[#005682]" strokeWidth={1.8} /> Add staff member
               </h2>
-              <button onClick={() => setIsAddHeadcountModalOpen(false)} disabled={isAddingHeadcount} className="text-gray-400 hover:text-gray-900 transition-colors">
-                <X className="w-6 h-6" />
+              <button
+                onClick={() => setIsAddHeadcountModalOpen(false)}
+                disabled={isAddingHeadcount}
+                className="text-[#58534C] hover:text-[#12142A] transition-colors"
+              >
+                <X className="w-6 h-6" strokeWidth={1.8} />
               </button>
             </div>
-            
+
             <form onSubmit={handleAddHeadcountSubmit} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Email</label>
-                <input 
-                  type="email" 
+                <label className="block text-[10px] font-semibold text-[#58534C] uppercase tracking-micro mb-1">Email</label>
+                <input
+                  type="email"
                   required
                   placeholder="name@clinic.com"
-                  value={newHeadcountEmail} 
+                  value={newHeadcountEmail}
                   onChange={(e) => setNewHeadcountEmail(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-medium focus:border-[#5E4791] focus:ring-0 outline-none"
+                  className="w-full px-4 py-3 bg-[#FAF8F5] border border-[#D7D1C8] rounded-xl font-medium focus:border-[#005682] focus:bg-white focus:ring-0 outline-none text-[#12142A]"
                 />
               </div>
               <div className="flex gap-4">
                 <div className="flex-1">
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Role</label>
-                  <select 
-                    value={newHeadcountRole} 
-                    onChange={(e) => setNewHeadcountRole(e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-bold focus:border-[#5E4791] focus:ring-0 outline-none"
+                  <label className="block text-[10px] font-semibold text-[#58534C] uppercase tracking-micro mb-1">Role</label>
+                  <select
+                    value={newHeadcountRole}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      setNewHeadcountRole(nextRole);
+                      // Reset any hierarchy picker that is no longer legal
+                      // for the newly-selected role.
+                      if (nextRole !== 'IC') setNewHeadcountManagerEmail('');
+                      if (nextRole !== 'MANAGER') setNewHeadcountAdminEmail('');
+                    }}
+                    className="w-full px-4 py-3 bg-[#FAF8F5] border border-[#D7D1C8] rounded-xl font-semibold focus:border-[#005682] focus:bg-white focus:ring-0 outline-none text-[#12142A]"
                   >
                     <option value="ADMIN">Admin</option>
                     <option value="MANAGER">Manager</option>
@@ -739,11 +1047,11 @@ export function AdminPanel() {
                   </select>
                 </div>
                 <div className="w-1/3">
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Tier</label>
-                  <select 
-                    value={newHeadcountTier} 
+                  <label className="block text-[10px] font-semibold text-[#58534C] uppercase tracking-micro mb-1">Tier</label>
+                  <select
+                    value={newHeadcountTier}
                     onChange={(e) => setNewHeadcountTier(parseInt(e.target.value))}
-                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-bold focus:border-[#5E4791] focus:ring-0 outline-none"
+                    className="w-full px-4 py-3 bg-[#FAF8F5] border border-[#D7D1C8] rounded-xl font-semibold focus:border-[#005682] focus:bg-white focus:ring-0 outline-none text-[#12142A]"
                   >
                     <option value={1}>1</option>
                     <option value={2}>2</option>
@@ -752,25 +1060,69 @@ export function AdminPanel() {
                 </div>
               </div>
 
+              {newHeadcountRole === 'IC' && (
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+                    Assigned Manager
+                  </label>
+                  <select
+                    value={newHeadcountManagerEmail}
+                    onChange={(e) => setNewHeadcountManagerEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-bold focus:border-[#5E4791] focus:ring-0 outline-none"
+                  >
+                    <option value="">— Select Manager —</option>
+                    {managerOptions.map((m) => (
+                      <option key={m.id} value={m.email}>{m.email}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {newHeadcountRole === 'MANAGER' && (
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+                    Assigned Admin (optional)
+                  </label>
+                  <select
+                    value={newHeadcountAdminEmail}
+                    onChange={(e) => setNewHeadcountAdminEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-bold focus:border-[#5E4791] focus:ring-0 outline-none"
+                  >
+                    <option value="">— No Admin —</option>
+                    {adminOptions.map((a) => (
+                      <option key={a.id} value={a.email}>{a.email}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {addHeadcountError && (
-                <div className="p-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl text-center border border-red-100">
+                <div className="p-3 bg-[#FDEBEC] text-[#9F2F2D] text-sm font-semibold rounded-xl text-center border border-[#F2C9CC]">
                   {addHeadcountError}
                 </div>
               )}
 
               <div className="pt-4 flex gap-3">
-                <button type="button" onClick={() => setIsAddHeadcountModalOpen(false)} disabled={isAddingHeadcount} className="flex-1 py-3 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-100 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => setIsAddHeadcountModalOpen(false)}
+                  disabled={isAddingHeadcount}
+                  className="flex-1 py-3 rounded-xl font-semibold text-[#495654] bg-white border border-[#D7D1C8] hover:bg-[#F1ECE7] transition-colors"
+                >
                   Cancel
                 </button>
-                <button type="submit" disabled={isAddingHeadcount} className="flex-1 py-3 rounded-xl font-black bg-[#5E4791] text-white shadow-md hover:bg-[#4a3872] transition-colors flex justify-center items-center gap-2">
-                  {isAddingHeadcount ? <Loader className="w-5 h-5 animate-spin" /> : 'Add User'}
+                <button
+                  type="submit"
+                  disabled={isAddingHeadcount}
+                  className="flex-1 py-3 rounded-xl font-semibold bg-[#12142A] text-[#FAF8F5] hover:bg-[#011537] transition-colors flex justify-center items-center gap-2 ch-focus-ring"
+                >
+                  {isAddingHeadcount ? <Loader className="w-5 h-5 animate-spin" /> : 'Add user'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }
