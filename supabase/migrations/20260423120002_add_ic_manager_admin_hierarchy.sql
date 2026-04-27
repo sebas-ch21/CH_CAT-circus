@@ -57,7 +57,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $fn$
 DECLARE
   mgr_role app_role;
   adm_role app_role;
@@ -114,7 +114,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$;
+$fn$;
 
 DROP TRIGGER IF EXISTS trg_validate_profile_hierarchy ON public.profiles;
 CREATE TRIGGER trg_validate_profile_hierarchy
@@ -160,7 +160,7 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $bulk$
 DECLARE
   item          jsonb;
   target_id     uuid;
@@ -241,7 +241,7 @@ BEGIN
     'failures',      failures
   );
 END;
-$$;
+$bulk$;
 
 COMMENT ON FUNCTION public.fn_bulk_assign_hierarchy(jsonb) IS
   'Atomically apply a batch of IC/Manager → Manager/Admin assignments and return per-row outcomes.';
